@@ -65,12 +65,12 @@ Space-Paper/
 
 - [x] **Day 1:** Spin up local Qdrant Vector DB via Docker and verify Dashboard.
 - [x] **Day 2:** Connect python client, manage collection lifecycle, generate embeddings, and upsert vectors with rich metadata and latency logging.
-- [ ] **Day 3:** Implement semantic retrieval with `client.search()` and similarity score filtering.
-- [ ] **Day 4:** Set up document pipelines to scrape real PDF documents from NASA/arXiv archives.
-- [ ] **Day 5:** Develop recursive chunking strategies with LangChain text splitters.
-- [ ] **Day 6:** Implement bulk upsert operations to ingest large volumes of vectors efficiently.
-- [ ] **Day 7:** Initialize FastAPI backend gateway and design strict Pydantic payload schemas.
-- [ ] **Day 8:** Build `/api/v1/search` endpoints for semantic query routing.
+- [x] **Day 3:** Implement semantic retrieval with `client.search()` and similarity score filtering.
+- [x] **Day 4:** Set up document pipelines to scrape real PDF documents from NASA/arXiv archives.
+- [x] **Day 5:** Develop recursive chunking strategies with LangChain text splitters.
+- [x] **Day 6:** Implement bulk upsert operations to ingest large volumes of vectors efficiently.
+- [x] **Day 7:** Initialize FastAPI backend gateway and design strict Pydantic payload schemas.
+- [x] **Day 8:** Build `/api/v1/search` endpoints for semantic query routing.
 - [ ] **Day 9:** Integrate LLM APIs with strict grounding prompts to eliminate hallucinations.
 - [ ] **Day 10:** Connect all components into a full end-to-end RAG pipeline, measure latency, and document deployment.
 
