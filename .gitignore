@@ -10,6 +10,11 @@ Thumbs.db
 # Qdrant Database Storage (CRITICAL: Do not push DB data to GitHub)
 embedding-test/qdrant_storage/
 
+# Downloaded PDFs and Raw Data
+data/
+embedding-test/data/
+
+
 # Environments
 .env
 .venv

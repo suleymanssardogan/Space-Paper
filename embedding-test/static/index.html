@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antispace - Space Science RAG Assistant</title>
+    <meta name="description" content="Antispace is an advanced academic RAG assistant for space science and astrophysics, providing verified answers with precise page-level citations.">
+    <!-- Google Fonts: Outfit and Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome icons for a premium feel -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Core Style -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="stars-bg"></div>
+    <div class="nebula-1"></div>
+    <div class="nebula-2"></div>
+
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="logo-area">
+                <i class="fa-solid fa-satellite-dish logo-icon"></i>
+                <div class="logo-text">
+                    <h1>Antispace</h1>
+                    <span>Space Science RAG Assistant</span>
+                </div>
+            </div>
+            <!-- Diagnostics Health Check -->
+            <div id="health-badge" class="health-badge status-loading">
+                <span class="pulse-dot"></span>
+                <span id="health-text">Sistem Bağlanıyor...</span>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <!-- Left Panel: Controls and Parameters -->
+            <section class="control-panel glass-panel">
+                <h2><i class="fa-solid fa-sliders"></i> Kontrol Paneli</h2>
+                <p class="panel-desc">Arama kriterlerini ve RAG hassasiyet ayarlarını buradan yapılandırın.</p>
+
+                <!-- Search Mode Toggle -->
+                <div class="control-group">
+                    <label>Çalışma Modu</label>
+                    <div class="mode-toggle-container">
+                        <button id="mode-ask-btn" class="mode-btn active" onclick="switchMode('ask')">
+                            <i class="fa-solid fa-brain"></i> RAG Soru/Cevap
+                        </button>
+                        <button id="mode-search-btn" class="mode-btn" onclick="switchMode('search')">
+                            <i class="fa-solid fa-magnifying-glass"></i> Semantik Arama
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Limit -->
+                <div class="control-group">
+                    <div class="slider-header">
+                        <label for="param-limit">Maksimum Belge Sayısı</label>
+                        <span id="val-limit" class="badge">3</span>
+                    </div>
+                    <input type="range" id="param-limit" min="1" max="10" value="3" oninput="updateLimitValue(this.value)">
+                    <span class="range-info">Geri alınacak en alakalı kaynak sayısı.</span>
+                </div>
+
+                <!-- Similarity Score Threshold -->
+                <div class="control-group">
+                    <div class="slider-header">
+                        <label for="param-threshold">Benzerlik Eşik Değeri</label>
+                        <span id="val-threshold" class="badge">0.35</span>
+                    </div>
+                    <input type="range" id="param-threshold" min="0.0" max="1.0" step="0.05" value="0.35" oninput="updateThresholdValue(this.value)">
+                    <span class="range-info">Bu değerin altındaki ilgisiz belgeler filtrelenir.</span>
+                </div>
+
+                <!-- Database Info Summary -->
+                <div class="db-summary">
+                    <h3><i class="fa-solid fa-database"></i> Veritabanı Durumu</h3>
+                    <div class="info-row">
+                        <span class="label">Koleksiyon:</span>
+                        <span class="value code">space_science_collection</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Toplam Vektör:</span>
+                        <span id="db-vectors" class="value">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Gecikme (Check):</span>
+                        <span id="db-latency" class="value">-</span>
+                    </div>
+                </div>
+
+                <!-- Daily Ingestion Actions -->
+                <div class="db-summary" style="border-top: 1px solid var(--glass-border); margin-top: 1rem; padding-top: 1rem;">
+                    <h3><i class="fa-solid fa-cloud-arrow-down"></i> arXiv Veri Besleme</h3>
+                    <p class="panel-desc" style="font-size: 0.75rem; margin-bottom: 0.75rem; line-height: 1.3;">Canlı arXiv astrofizik arşivinden en yeni makaleleri indirip Qdrant'a yükleyin.</p>
+                    <button id="ingest-btn" class="glowing-btn" style="width: 100%; justify-content: center; background: linear-gradient(135deg, var(--accent-pink), var(--accent-purple)); padding: 8px 12px; font-size: 0.8rem;" onclick="triggerArxivIngest()">
+                        <i class="fa-solid fa-rotate"></i> <span>Yeni Makaleleri Çek</span>
+                    </button>
+                    <div id="ingest-status" class="range-info" style="margin-top: 0.5rem; text-align: center; display: none; color: var(--accent-pink);">
+                        Makaleler indiriliyor ve vektörleştiriliyor...
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Panel: Query Area and Results -->
+            <section class="results-panel">
+                <!-- Query Box -->
+                <div class="query-box glass-panel">
+                    <form id="query-form" onsubmit="handleQuery(event)">
+                        <div class="input-container">
+                            <i class="fa-solid fa-search input-search-icon"></i>
+                            <input type="text" id="query-input" placeholder="Uzay bilimleriyle ilgili sorunuzu buraya yazın... (örn: What is Stephan's Quintet?)" required autocomplete="off">
+                            <button type="submit" id="submit-btn" class="glowing-btn">
+                                <span>Gönder</span> <i class="fa-solid fa-paper-plane"></i>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Response Display Area -->
+                <div id="welcome-card" class="welcome-card glass-panel">
+                    <div class="welcome-icon">
+                        <i class="fa-solid fa-meteor"></i>
+                    </div>
+                    <h2>Akademik Uzay RAG Asistanına Hoş Geldiniz</h2>
+                    <p>Antispace; arXiv makaleleri, JWST bilimsel raporları ve Kepler misyonu belgeleri üzerinde semantik arama yaparak <strong>halüsinasyonsuz</strong> ve <strong>sayfa atıflı</strong> cevaplar üretir.</p>
+                    <div class="sample-queries">
+                        <h4>Örnek Göz Atabileceğiniz Sorular:</h4>
+                        <div class="query-chips">
+                            <button class="chip" onclick="setQuery('What is Stephan\'s Quintet?')">What is Stephan's Quintet?</button>
+                            <button class="chip" onclick="setQuery('What is the Kepler Follow-up Observation Program?')">Kepler Follow-up Program?</button>
+                            <button class="chip" onclick="setQuery('Describe the JWST optical performance.')">JWST optical performance</button>
+                            <button class="chip" onclick="setQuery('How to bake a pizza?')">Pizza tarifi nedir? (Grounding Testi)</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Loading State -->
+                <div id="loading-card" class="loading-card glass-panel hidden">
+                    <div class="space-loader">
+                        <div class="orbit">
+                            <div class="planet"></div>
+                        </div>
+                    </div>
+                    <h3>Yapay Zeka Bağlamı Birleştiriyor...</h3>
+                    <p>Semantik belgeler taranıyor ve LLM ile cevap sentezleniyor.</p>
+                </div>
+
+                <!-- Error Card -->
+                <div id="error-card" class="error-card glass-panel hidden">
+                    <div class="error-icon">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                    </div>
+                    <h3>Sorgu İşlenirken Hata Oluştu</h3>
+                    <p id="error-message">Hata ayrıntısı burada gösterilecektir.</p>
+                    <button class="retry-btn" onclick="retryLastQuery()"><i class="fa-solid fa-rotate-right"></i> Yeniden Dene</button>
+                </div>
+
+                <!-- Answer Card (Ask Mode Only) -->
+                <div id="answer-card" class="answer-card glass-panel hidden">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-circle-nodes"></i> Üretilen Cevap</h3>
+                        <span id="ask-latency-badge" class="latency-badge">Latency: 0.00s</span>
+                    </div>
+                    <div class="card-body">
+                        <p id="ai-answer-text">Cevap yükleniyor...</p>
+                        
+                        <!-- User Feedback Actions -->
+                        <div class="feedback-area" style="display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 1.5rem; padding-top: 0.75rem; border-top: 1px dashed rgba(255, 255, 255, 0.08);">
+                            <span style="font-size: 0.75rem; color: var(--text-secondary);">Cevap faydalı oldu mu?</span>
+                            <button class="chip feedback-btn" onclick="submitFeedback(1)" style="padding: 4px 10px; margin: 0; background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.15); color: #10b981;">
+                                <i class="fa-regular fa-thumbs-up"></i> Evet
+                            </button>
+                            <button class="chip feedback-btn" onclick="submitFeedback(-1)" style="padding: 4px 10px; margin: 0; background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.15); color: #ef4444;">
+                                <i class="fa-regular fa-thumbs-down"></i> Hayır
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Citations & Sources Card -->
+                <div id="citations-card" class="citations-card hidden">
+                    <h3><i class="fa-solid fa-feather-pointed"></i> Kullanılan Kaynaklar & Sayfa Atıfları</h3>
+                    <div id="citations-container" class="citations-grid">
+                        <!-- Dynamic citations go here -->
+                    </div>
+                </div>
+
+                <!-- Search Results Card (Search Mode Only) -->
+                <div id="search-results-card" class="search-results-card hidden">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-list-check"></i> Bulunan Eşleşmeler ({count})</h3>
+                        <span id="search-latency-badge" class="latency-badge">Latency: 0.00s</span>
+                    </div>
+                    <div id="search-results-container" class="search-results-list">
+                        <!-- Dynamic search result cards go here -->
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+            <p>&copy; 2026 Antispace RAG Gateway | Zero Hallucination Space Science QA Engine</p>
+        </footer>
+    </div>
+
+    <!-- Modal for citation detail -->
+    <div id="citation-modal" class="modal-overlay hidden" onclick="closeModal(event)">
+        <div class="modal-content glass-panel" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3 id="modal-source-title">Document.pdf - Sayfa 0</h3>
+                <button class="close-btn" onclick="closeModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <h4>Eşleşen Metin Parçası (Chunk):</h4>
+                <div class="chunk-highlight" id="modal-chunk-text">
+                    Metin yükleniyor...
+                </div>
+                <div class="modal-meta-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">Cosine Skor</span>
+                        <span class="meta-val" id="modal-score">0.8500</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Karakter Sayısı</span>
+                        <span class="meta-val" id="modal-char-count">789</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Core Logic -->
+    <script src="/static/app.js"></script>
+</body>
+</html>

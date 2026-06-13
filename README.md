@@ -71,8 +71,8 @@ Space-Paper/
 - [x] **Day 6:** Implement bulk upsert operations to ingest large volumes of vectors efficiently.
 - [x] **Day 7:** Initialize FastAPI backend gateway and design strict Pydantic payload schemas.
 - [x] **Day 8:** Build `/api/v1/search` endpoints for semantic query routing.
-- [ ] **Day 9:** Integrate LLM APIs with strict grounding prompts to eliminate hallucinations.
-- [ ] **Day 10:** Connect all components into a full end-to-end RAG pipeline, measure latency, and document deployment.
+- [x] **Day 9:** Integrate LLM APIs with strict grounding prompts to eliminate hallucinations.
+- [x] **Day 10:** Connect all components into a full end-to-end RAG pipeline, measure latency, and document deployment.
 
 ---
 

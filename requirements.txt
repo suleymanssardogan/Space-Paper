@@ -1,0 +1,13 @@
+fastapi==0.136.1
+uvicorn==0.46.0
+pydantic==2.12.5
+requests==2.31.0
+qdrant-client==1.18.0
+sentence-transformers==5.1.2
+pypdf==6.5.0
+langchain-text-splitters==1.1.2
+python-dotenv==1.0.1
+cohere==5.5.8
+langfuse==2.36.0
+
+

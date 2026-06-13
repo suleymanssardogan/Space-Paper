@@ -1,0 +1,32 @@
+name: Daily arXiv Ingestion Pipeline
+
+on:
+  schedule:
+    # Her gün Türkiye saati ile sabah 05:00 (UTC 02:00) çalışır
+    - cron: '0 2 * * *'
+  workflow_dispatch: # GitHub arayüzünden manuel tetiklemek için
+
+jobs:
+  ingestion-job:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Code Checkout
+        uses: actions/checkout@v4
+
+      - name: Python Setup
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run Ingest Script
+        env:
+          QDRANT_URL: ${{ secrets.QDRANT_URL }}
+          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+        run: |
+          python embedding-test/ingest_daily_arxiv.py

@@ -1,3 +1,4 @@
+import os
 import time
 import logging
 from qdrant_client import QdrantClient
@@ -9,27 +10,42 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class SpaceScienceVectorStore:
-    def __init__(self,host:str="http://localhost:6333"):
-        # QdrantClient'ı başlat
-        self.client = QdrantClient(host)
+    def __init__(self, host: str = None):
+        # QdrantClient'ı başlat (Yerel veya Qdrant Cloud)
+        qdrant_url = os.getenv("QDRANT_URL")
+        qdrant_api_key = os.getenv("QDRANT_API_KEY")
+        
+        if qdrant_url:
+            logger.info(f"Qdrant Cloud bağlantısı kuruluyor: {qdrant_url}")
+            self.client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
+        else:
+            if host is None:
+                host = os.getenv("QDRANT_HOST", "http://localhost:6333")
+            logger.info(f"Yerel Qdrant bağlantısı kuruluyor: {host}")
+            self.client = QdrantClient(host)
 
         # 384 boyutlu vektör üreten modelmizi yükleme
         self.model = SentenceTransformer("all-MiniLM-L6-v2")
 
-    def init_collection(self,collection_name:str):
-
+    def init_collection(self, collection_name: str):
         try: 
             if self.client.collection_exists(collection_name=collection_name):
-                logger.info(f"Collection already exists:{collection_name}")
+                logger.info(f"Collection already exists: {collection_name}")
                 return
             
             logger.info(f"Creating collection: {collection_name}")
             self.client.create_collection(
                 collection_name=collection_name,
-                vectors_config=VectorParams(size=384,distance=Distance.COSINE)
-
+                vectors_config=VectorParams(size=384, distance=Distance.COSINE)
             )
-            logger.info(f"Collection created: {collection_name}")
+            
+            # Tam metin araması (Full-text keyword matching) için indeks oluştur
+            self.client.create_payload_index(
+                collection_name=collection_name,
+                field_name="text",
+                field_schema="text"
+            )
+            logger.info(f"Collection created with text payload index: {collection_name}")
 
         except Exception as e:
             logger.error(f"Error creating collection: {e}")
