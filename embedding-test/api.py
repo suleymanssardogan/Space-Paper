@@ -1,3 +1,7 @@
+from dotenv import load_dotenv
+# .env dosyasını yükle
+load_dotenv()
+
 import os
 import time
 import requests
@@ -7,10 +11,7 @@ from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from save_to_qdrant import SpaceScienceVectorStore
-from dotenv import load_dotenv
 
-# .env dosyasını yükle
-load_dotenv()
 
 # Loglama ayarları
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -331,14 +332,14 @@ def ask_question(request: AskRequest):
         
         # 4a. Önce Gemini API'yi dene (eğer anahtar varsa)
         if gemini_key:
-            model_name = "gemini-flash-latest"
+            model_name = "gemini-2.5-flash"
             api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
             
             payload = {
                 "contents": [
                     {
                         "parts": [
-                            {"text": system_prompt + "\n\nSORU:\n" + request.question}
+                            {"text": f"{system_prompt}\n\nBAĞLAM (CONTEXT):\n{context_str}\n\nSORU:\n{request.question}"}
                         ]
                     }
                 ],
@@ -409,7 +410,7 @@ def ask_question(request: AskRequest):
                     payload = {
                         "model": model_to_use,
                         "messages": [
-                            {"role": "system", "content": system_prompt},
+                            {"role": "system", "content": f"{system_prompt}\n\nBAĞLAM (CONTEXT):\n{context_str}"},
                             {"role": "user", "content": request.question}
                         ],
                         "temperature": 0.1,
