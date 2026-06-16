@@ -1,8 +1,13 @@
+import sys
+import os
+
+# Script'in bulunduğu dizini Python arama yoluna ekle (Docker/Render ortamları için)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from dotenv import load_dotenv
 # .env dosyasını yükle
 load_dotenv()
 
-import os
 import time
 import requests
 import logging

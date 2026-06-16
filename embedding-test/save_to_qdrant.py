@@ -19,6 +19,12 @@ class SpaceScienceVectorStore:
             logger.info(f"Qdrant Cloud bağlantısı kuruluyor: {qdrant_url}")
             self.client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key, timeout=60)
         else:
+            if os.getenv("GITHUB_ACTIONS") == "true":
+                raise ValueError(
+                    "\n\n❌ HATA: QDRANT_URL çevre değişkeni GitHub Actions ortamında bulunamadı!\n"
+                    "Lütfen GitHub deposunun (Repository) ayarlarından (Settings -> Secrets and variables -> Actions) "
+                    "QDRANT_URL ve QDRANT_API_KEY sırlarını (Secrets) eklediğinizden emin olun.\n"
+                )
             if host is None:
                 host = os.getenv("QDRANT_HOST", "http://localhost:6333")
             logger.info(f"Yerel Qdrant bağlantısı kuruluyor: {host}")
