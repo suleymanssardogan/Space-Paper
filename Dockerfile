@@ -17,6 +17,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 ENV PYTHONPATH=/app/embedding-test
+ENV HF_HOME=/tmp/huggingface
 
 WORKDIR /app
 
@@ -39,6 +40,14 @@ RUN adduser \
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=bind,source=requirements.txt,target=requirements.txt \
     python -m pip install -r requirements.txt
+
+# Pre-download SentenceTransformer and CrossEncoder models
+RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
+SentenceTransformer('all-MiniLM-L6-v2'); \
+CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
+
+# Make cache directory writable by non-root user
+RUN chmod -R 777 /tmp/huggingface
 
 # Switch to the non-privileged user to run the application.
 USER appuser
