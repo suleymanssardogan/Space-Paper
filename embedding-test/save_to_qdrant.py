@@ -17,12 +17,12 @@ class SpaceScienceVectorStore:
         
         if qdrant_url:
             logger.info(f"Qdrant Cloud bağlantısı kuruluyor: {qdrant_url}")
-            self.client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
+            self.client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key, timeout=60)
         else:
             if host is None:
                 host = os.getenv("QDRANT_HOST", "http://localhost:6333")
             logger.info(f"Yerel Qdrant bağlantısı kuruluyor: {host}")
-            self.client = QdrantClient(host)
+            self.client = QdrantClient(host, timeout=60)
 
         # 384 boyutlu vektör üreten modelmizi yükleme
         self.model = SentenceTransformer("all-MiniLM-L6-v2")
