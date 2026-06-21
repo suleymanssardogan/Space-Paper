@@ -51,7 +51,7 @@ RUN chmod -R 777 /tmp/huggingface
 USER appuser
 
 # Copy the source code into the container.
-COPY . .
+COPY --chown=appuser:appuser . .
 
 # Expose the port that the application listens on.
 EXPOSE 8000
