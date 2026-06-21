@@ -33,6 +33,9 @@ RUN adduser \
     --uid "${UID}" \
     appuser
 
+# Pre-create the data directory and ensure the app user owns the workdir
+RUN mkdir -p /app/data && chown -R appuser:appuser /app
+
 # Download dependencies as a separate step to take advantage of Docker's caching.
 # Leverage a cache mount to /root/.cache/pip to speed up subsequent builds.
 # Leverage a bind mount to requirements.txt to avoid having to copy them into
