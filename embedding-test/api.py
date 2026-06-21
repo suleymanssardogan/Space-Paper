@@ -29,6 +29,17 @@ app = FastAPI(
     version="1.2.0"
 )
 
+from fastapi.middleware.cors import CORSMiddleware
+
+# CORS ayarları (Dışarıdan erişim için)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Gerekirse spesifik adresler eklenebilir
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Vektör veritabanı sınıfımızı ilklendir
 store = SpaceScienceVectorStore()
 COLLECTION_NAME = "space_science_collection"

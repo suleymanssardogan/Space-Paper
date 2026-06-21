@@ -1,5 +1,9 @@
 // Antispace Dashboard Client-Side Logic
 
+// API sunucusunun adresi. Frontend ve Backend aynı sunucudaysa boş bırakın (relative path).
+// Eğer frontend'i Netlify/GitHub Pages, backend'i Render/Railway'e kuracaksanız Render adresinizi girin: 'https://sunucu-adresiniz.onrender.com'
+const API_BASE = '';
+
 let currentMode = 'ask'; // 'ask' or 'search'
 let healthTimer = null;
 let lastQueryText = '';
@@ -56,7 +60,7 @@ async function runDiagnostics() {
     const dbLatency = document.getElementById('db-latency');
 
     try {
-        const response = await fetch('/api/v1/health');
+        const response = await fetch(`${API_BASE}/api/v1/health`);
         if (!response.ok) throw new Error("Status: " + response.status);
         
         const data = await response.json();
@@ -146,7 +150,7 @@ function showError(msg) {
 
 // Execute RAG Ask Query
 async function executeAskQuery(question, limit, scoreThreshold) {
-    const response = await fetch('/api/v1/ask', {
+    const response = await fetch(`${API_BASE}/api/v1/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question, limit, score_threshold: scoreThreshold })
@@ -212,7 +216,7 @@ async function executeAskQuery(question, limit, scoreThreshold) {
 
 // Execute Semantic Search Query
 async function executeSearchQuery(query, limit, scoreThreshold) {
-    const response = await fetch('/api/v1/search', {
+    const response = await fetch(`${API_BASE}/api/v1/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, limit, score_threshold: scoreThreshold })
@@ -267,7 +271,7 @@ async function executeSearchQuery(query, limit, scoreThreshold) {
 // Parallel fetch search chunks to populate citation tiles
 async function fetchTextSnippetsForCitations(query, limit, scoreThreshold) {
     try {
-        const response = await fetch('/api/v1/search', {
+        const response = await fetch(`${API_BASE}/api/v1/search`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query, limit, score_threshold: scoreThreshold })
@@ -382,7 +386,7 @@ async function submitFeedback(score) {
     feedbackBtns.forEach(btn => btn.disabled = true);
     
     try {
-        const response = await fetch('/api/v1/feedback', {
+        const response = await fetch(`${API_BASE}/api/v1/feedback`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question, answer, score, feedback_text: "" })
@@ -412,7 +416,7 @@ async function triggerArxivIngest() {
     ingestStatus.textContent = 'Canlı arXiv API bağlanıyor, makaleler indiriliyor...';
     
     try {
-        const response = await fetch('/api/v1/ingest/daily', {
+        const response = await fetch(`${API_BASE}/api/v1/ingest/daily`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ category: "astro-ph.CO+OR+cat:astro-ph.EP", max_results: 3 })
