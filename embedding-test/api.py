@@ -119,9 +119,13 @@ _local_reranker = None
 def get_local_reranker():
     global _local_reranker
     if _local_reranker is None:
-        from sentence_transformers import CrossEncoder
-        logger.info("Yerel Cross-Encoder reranker yükleniyor: cross-encoder/ms-marco-MiniLM-L-6-v2")
-        _local_reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+        try:
+            from sentence_transformers import CrossEncoder
+            logger.info("Yerel Cross-Encoder reranker yükleniyor: cross-encoder/ms-marco-MiniLM-L-6-v2")
+            _local_reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+        except ImportError:
+            logger.warning("sentence-transformers paketi bulunamadı, yerel reranking kullanılamaz.")
+            raise RuntimeError("sentence-transformers paketi yüklü değil, yerel reranker devre dışı.")
     return _local_reranker
 
 def rerank_documents(query: str, raw_results: list, limit: int) -> list:

@@ -4,7 +4,7 @@ import logging
 from qdrant_client import QdrantClient
 
 from qdrant_client.models import VectorParams,Distance,PointStruct
-from sentence_transformers import SentenceTransformer
+from fastembed import TextEmbedding
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -30,8 +30,12 @@ class SpaceScienceVectorStore:
             logger.info(f"Yerel Qdrant bağlantısı kuruluyor: {host}")
             self.client = QdrantClient(host, timeout=60)
 
-        # 384 boyutlu vektör üreten modelmizi yükleme
-        self.model = SentenceTransformer("all-MiniLM-L6-v2")
+        # 384 boyutlu vektör üreten modelmizi yükleme (fastembed kullanarak bellek tüketimini düşürüyoruz)
+        self.model = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
+
+    def encode(self, texts: list[str]) -> list[list[float]]:
+        """Fastembed kullanarak metinleri vektörleştirir."""
+        return [emb.tolist() for emb in self.model.embed(texts)]
 
     def init_collection(self, collection_name: str):
         try: 
@@ -64,7 +68,7 @@ class SpaceScienceVectorStore:
             logger.info(f"{len(documents)} ader doküman için embedding üretiliyor...")
 
             # 1. Cümlelerin vektörleri çıkartmak
-            embeddings = self.model.encode(documents)
+            embeddings = self.encode(documents)
 
             # 2. Qdrant Point'lerini (PointStruct) hazırlamak
             points =[]
@@ -72,7 +76,7 @@ class SpaceScienceVectorStore:
                 points.append(
                     PointStruct(
                         id =i,
-                        vector=embeddings[i].tolist(),
+                        vector=embeddings[i],
                         payload={
                             "text":doc,
                             "source":"space_paper_archive",
@@ -100,7 +104,7 @@ class SpaceScienceVectorStore:
             logger.info(f"Sorgu için arama yapılıyor: '{query}'")
 
             # 1. Sorgu cümlesini vektörleştirme
-            query_vector = self.model.encode(query).tolist()
+            query_vector = self.encode([query])[0]
 
             # 2. Qdrant üzerinde arama yapma
             results = self.client.query_points(

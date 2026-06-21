@@ -1,6 +1,11 @@
 import time
 import logging
 import uuid
+from dotenv import load_dotenv
+
+# .env dosyasını yükle
+load_dotenv()
+
 from ingest_pdfs import DocumetPipeline
 from save_to_qdrant import SpaceScienceVectorStore
 from qdrant_client.models import PointStruct
@@ -22,7 +27,7 @@ def bulk_upsert_chunks(store: SpaceScienceVectorStore, collection_name: str, chu
         
         # 1. Mevcut batch içindeki metinleri topla ve topluca embedding üret
         batch_texts = [c["text"] for c in batch]
-        embeddings = store.model.encode(batch_texts)
+        embeddings = store.encode(batch_texts)
         
         # 2. Qdrant PointStruct listesini oluştur
         points = []
@@ -33,7 +38,7 @@ def bulk_upsert_chunks(store: SpaceScienceVectorStore, collection_name: str, chu
             points.append(
                 PointStruct(
                     id=point_id,
-                    vector=embeddings[idx].tolist(),
+                    vector=embeddings[idx],
                     payload={
                         "text": chunk["text"],
                         "source": chunk["source"],

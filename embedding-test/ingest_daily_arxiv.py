@@ -2,6 +2,11 @@ import os
 import requests
 import logging
 import xml.etree.ElementTree as ET
+from dotenv import load_dotenv
+
+# .env dosyasını yükle
+load_dotenv()
+
 from ingest_pdfs import DocumetPipeline
 from save_to_qdrant import SpaceScienceVectorStore
 from ingest_to_qdrant import bulk_upsert_chunks
