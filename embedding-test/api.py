@@ -79,6 +79,7 @@ class SearchResponse(BaseModel):
     query: str
     results: list[SearchResultItem]
     latency_seconds: float = Field(..., description="Arama işleminin sunucu tarafındaki gecikme süresi")
+    prefiltered_source: str | None = Field(default=None, description="Filtrelenen kaynak dosya")
 
 # --- DAY 9: NEW SCHEMAS FOR RAG Q&A ---
 
@@ -100,6 +101,7 @@ class AskResponse(BaseModel):
     latency_seconds: float = Field(..., description="Toplam işlem süresi (Arama + LLM)")
     faithfulness: float | None = Field(default=None, description="Cevabın bağlama sadakat skoru (0-1)")
     answer_relevance: float | None = Field(default=None, description="Cevabın soruyla alaka skoru (0-1)")
+    prefiltered_source: str | None = Field(default=None, description="Filtrelenen kaynak dosya")
 
 class HealthResponse(BaseModel):
     status: str = Field(..., description="Genel sistem durumu (healthy / unhealthy)")
@@ -283,7 +285,8 @@ def search_documents(request: SearchRequest):
         return SearchResponse(
             query=request.query,
             results=results,
-            latency_seconds=round(latency, 4)
+            latency_seconds=round(latency, 4),
+            prefiltered_source=request.source if request.source else None
         )
         
     except Exception as e:
@@ -391,7 +394,8 @@ def ask_question(request: AskRequest):
                 question=request.question,
                 answer="Aranan bilgi indekslenmiş akademik belgelerde bulunamadı.",
                 citations=[],
-                latency_seconds=round(time.time() - start_time, 4)
+                latency_seconds=round(time.time() - start_time, 4),
+                prefiltered_source=request.source if request.source else None
             )
             
         # 2. Adım: Bağlamı (Context) ve Atıfları (Citations) oluştur
@@ -595,7 +599,8 @@ def ask_question(request: AskRequest):
             citations=citations,
             latency_seconds=round(latency, 4),
             faithfulness=eval_scores.get("faithfulness"),
-            answer_relevance=eval_scores.get("answer_relevance")
+            answer_relevance=eval_scores.get("answer_relevance"),
+            prefiltered_source=request.source if request.source else None
         )
         
     except Exception as e:

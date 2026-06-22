@@ -177,20 +177,43 @@ async function executeAskQuery(question, limit, scoreThreshold, source) {
     document.getElementById('ai-answer-text').innerHTML = formatAnswer(data.answer);
     document.getElementById('ask-latency-badge').textContent = `Latency: ${data.latency_seconds.toFixed(3)}s`;
     
+    // Update Prefilter Badge in Ask Mode
+    const askPrefilterBadge = document.getElementById('ask-prefilter-badge');
+    if (data.prefiltered_source) {
+        askPrefilterBadge.innerHTML = `<i class="fa-solid fa-filter"></i> Ön Filtreleme: Aktif (${data.prefiltered_source})`;
+        askPrefilterBadge.className = 'prefilter-badge active';
+    } else {
+        askPrefilterBadge.innerHTML = `<i class="fa-solid fa-filter"></i> Ön Filtreleme: Pasif`;
+        askPrefilterBadge.className = 'prefilter-badge inactive';
+    }
+    
     // Render Evaluation Scores
     const evalScoresArea = document.getElementById('eval-scores-area');
     const evalFaithfulnessVal = document.getElementById('eval-faithfulness-val');
     const evalRelevanceVal = document.getElementById('eval-relevance-val');
+    const evalStatusBadge = document.getElementById('eval-status-badge');
+    
+    // Always keep it visible (no 'hidden' class by default)
+    evalScoresArea.classList.remove('hidden');
     
     if (data.faithfulness !== null && data.faithfulness !== undefined) {
-        evalScoresArea.classList.remove('hidden');
         evalFaithfulnessVal.textContent = data.faithfulness.toFixed(2);
         evalFaithfulnessVal.className = 'eval-score-val ' + getScoreClass(data.faithfulness);
         
         evalRelevanceVal.textContent = data.answer_relevance.toFixed(2);
         evalRelevanceVal.className = 'eval-score-val ' + getScoreClass(data.answer_relevance);
+        
+        evalStatusBadge.textContent = "RAGAs: Aktif";
+        evalStatusBadge.className = "eval-status-badge status-active";
     } else {
-        evalScoresArea.classList.add('hidden');
+        evalFaithfulnessVal.textContent = "N/A";
+        evalFaithfulnessVal.className = "eval-score-val eval-poor";
+        
+        evalRelevanceVal.textContent = "N/A";
+        evalRelevanceVal.className = "eval-score-val eval-poor";
+        
+        evalStatusBadge.textContent = "RAGAs: Pasif (API Key Eksik)";
+        evalStatusBadge.className = "eval-status-badge status-passive";
     }
     
     // Render Citations
@@ -263,6 +286,16 @@ async function executeSearchQuery(query, limit, scoreThreshold, source) {
     headerTitle.innerHTML = `<i class="fa-solid fa-list-check"></i> Semantik Eşleşmeler (${searchResultsData.length})`;
     
     document.getElementById('search-latency-badge').textContent = `Latency: ${data.latency_seconds.toFixed(3)}s`;
+    
+    // Update Prefilter Badge in Search Mode
+    const searchPrefilterBadge = document.getElementById('search-prefilter-badge');
+    if (data.prefiltered_source) {
+        searchPrefilterBadge.innerHTML = `<i class="fa-solid fa-filter"></i> Ön Filtreleme: Aktif (${data.prefiltered_source})`;
+        searchPrefilterBadge.className = 'prefilter-badge active';
+    } else {
+        searchPrefilterBadge.innerHTML = `<i class="fa-solid fa-filter"></i> Ön Filtreleme: Pasif`;
+        searchPrefilterBadge.className = 'prefilter-badge inactive';
+    }
     
     if (searchResultsData.length > 0) {
         searchResultsData.forEach((res, idx) => {

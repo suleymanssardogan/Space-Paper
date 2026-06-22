@@ -176,13 +176,16 @@
                 <div id="answer-card" class="answer-card glass-panel hidden">
                     <div class="card-header">
                         <h3><i class="fa-solid fa-circle-nodes"></i> Üretilen Cevap</h3>
-                        <span id="ask-latency-badge" class="latency-badge">Latency: 0.00s</span>
+                        <div class="header-badges">
+                            <span id="ask-prefilter-badge" class="prefilter-badge inactive"><i class="fa-solid fa-filter"></i> Ön Filtreleme: Pasif</span>
+                            <span id="ask-latency-badge" class="latency-badge">Latency: 0.00s</span>
+                        </div>
                     </div>
                     <div class="card-body">
                         <p id="ai-answer-text">Cevap yükleniyor...</p>
                         
                         <!-- RAG Evaluation Scores (Faithfulness & Relevance) -->
-                        <div id="eval-scores-area" class="eval-scores-container hidden">
+                        <div id="eval-scores-area" class="eval-scores-container">
                             <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase;"><i class="fa-solid fa-gauge-high"></i> Değerlendirme (RAGAs):</span>
                             <div class="eval-score-item">
                                 <span>Sadakat:</span>
@@ -192,6 +195,7 @@
                                 <span>Soru Alakası:</span>
                                 <span id="eval-relevance-val" class="eval-score-val">N/A</span>
                             </div>
+                            <span id="eval-status-badge" class="eval-status-badge">Pasif</span>
                         </div>
                         
                         <!-- User Feedback Actions -->
@@ -218,8 +222,11 @@
                 <!-- Search Results Card (Search Mode Only) -->
                 <div id="search-results-card" class="search-results-card hidden">
                     <div class="card-header">
-                        <h3><i class="fa-solid fa-list-check"></i> Bulunan Eşleşmeler ({count})</h3>
-                        <span id="search-latency-badge" class="latency-badge">Latency: 0.00s</span>
+                        <h3><i class="fa-solid fa-list-check"></i> Bulunan Eşleşmeler</h3>
+                        <div class="header-badges">
+                            <span id="search-prefilter-badge" class="prefilter-badge inactive"><i class="fa-solid fa-filter"></i> Ön Filtreleme: Pasif</span>
+                            <span id="search-latency-badge" class="latency-badge">Latency: 0.00s</span>
+                        </div>
                     </div>
                     <div id="search-results-container" class="search-results-list">
                         <!-- Dynamic search result cards go here -->
