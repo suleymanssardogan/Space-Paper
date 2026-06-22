@@ -55,6 +55,19 @@
                     </div>
                 </div>
 
+                <!-- Source Filter Selection -->
+                <div class="control-group">
+                    <label for="param-source">Kaynak PDF Filtresi</label>
+                    <div class="select-container">
+                        <select id="param-source" class="select-dropdown">
+                            <option value="">Tüm Kaynaklar (Filtresiz)</option>
+                            <option value="jwst_performance.pdf">jwst_performance.pdf (JWST Performans)</option>
+                            <option value="kepler_mission.pdf">kepler_mission.pdf (Kepler Görevi)</option>
+                        </select>
+                    </div>
+                    <span class="range-info">Aramayı veya soruyu tek bir dosyaya indirgeyin.</span>
+                </div>
+
                 <!-- Limit -->
                 <div class="control-group">
                     <div class="slider-header">
@@ -167,6 +180,19 @@
                     </div>
                     <div class="card-body">
                         <p id="ai-answer-text">Cevap yükleniyor...</p>
+                        
+                        <!-- RAG Evaluation Scores (Faithfulness & Relevance) -->
+                        <div id="eval-scores-area" class="eval-scores-container hidden">
+                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase;"><i class="fa-solid fa-gauge-high"></i> Değerlendirme (RAGAs):</span>
+                            <div class="eval-score-item">
+                                <span>Sadakat:</span>
+                                <span id="eval-faithfulness-val" class="eval-score-val">N/A</span>
+                            </div>
+                            <div class="eval-score-item">
+                                <span>Soru Alakası:</span>
+                                <span id="eval-relevance-val" class="eval-score-val">N/A</span>
+                            </div>
+                        </div>
                         
                         <!-- User Feedback Actions -->
                         <div class="feedback-area" style="display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 1.5rem; padding-top: 0.75rem; border-top: 1px dashed rgba(255, 255, 255, 0.08);">

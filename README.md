@@ -97,6 +97,9 @@ flowchart TD
 
 ## 📈 Engineering Highlights
 
+*   **Pre-filtered Vector Search:** Restrict queries to a specific source PDF via Qdrant payload indexing. Designed a `keyword` payload index on `source` to support fast metadata-based pre-filtering.
+*   **Explicit HNSW Index Config (ANN):** Tailored collection indexing configurations with explicit HNSW parameters (`m=16`, `ef_construct=100`, `full_scan_threshold=10000`) for Approximate Nearest Neighbors search optimization.
+*   **Ragas-like Runtime Evaluation:** Automated LLM-as-a-judge system verifying **Faithfulness** and **Answer Relevance** scores at runtime using Gemini's JSON module, feeding real-time quality metrics back to Langfuse.
 *   **ONNX Optimization:** Switched from `sentence-transformers` to `fastembed` to eliminate PyTorch dependencies. This reduced the Docker image size from **2.5GB to ~600MB**, accelerating deployment times.
 *   **Idempotency Protection:** Using deterministic UUID5 hashes of chunk texts ensures that running the ingestion pipeline repeatedly will overwrite matching documents rather than creating duplicate entries.
 *   **Model Caching:** GitHub Actions workflows cache the FastEmbed ONNX models, reducing daily cron pipeline run times to **~40 seconds**.
@@ -107,8 +110,8 @@ flowchart TD
 ## 💻 API Reference
 
 *   `GET /api/v1/health` - Diagnostics check (database connection status, collections, vector counts, API configuration).
-*   `POST /api/v1/search` - Raw semantic query endpoint (returns matches and cosine similarity scores).
-*   `POST /api/v1/ask` - End-to-end RAG endpoint (vector search, rerank, context synthesis, LLM generation with citations).
+*   `POST /api/v1/search` - Raw semantic query endpoint (supports optional `source` filter).
+*   `POST /api/v1/ask` - End-to-end RAG endpoint (supports optional `source` filter, returns citations, `faithfulness` score, and `answer_relevance` score).
 *   `POST /api/v1/feedback` - User rating logging.
 *   `POST /api/v1/ingest/daily` - Ingestion trigger to fetch new publications from arXiv.
 
@@ -141,4 +144,10 @@ python embedding-test/ingest_to_qdrant.py
 
 # Fetch and ingest latest arXiv papers
 python embedding-test/ingest_daily_arxiv.py
+```
+
+### 4. Running Evaluations
+To run the Ragas-like offline evaluation benchmark:
+```bash
+python embedding-test/evaluate_rag.py
 ```

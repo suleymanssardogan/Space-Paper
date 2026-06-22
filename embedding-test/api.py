@@ -67,6 +67,7 @@ class SearchRequest(BaseModel):
     query: str = Field(..., min_length=1, description="Aranacak semantik sorgu metni")
     limit: int = Field(default=3, ge=1, le=10, description="Dönecek maksimum sonuç sayısı")
     score_threshold: float | None = Field(default=None, ge=0.0, le=1.0, description="Benzerlik eşik değeri (Cosine similarity)")
+    source: str | None = Field(default=None, description="Filtrelenecek kaynak dosya adı (PDF)")
 
 class SearchResultItem(BaseModel):
     text: str = Field(..., description="Belge parçası (chunk)")
@@ -85,6 +86,7 @@ class AskRequest(BaseModel):
     question: str = Field(..., min_length=1, description="Uzay bilimleriyle ilgili sorunuz")
     limit: int = Field(default=3, ge=1, le=10, description="Bağlam olarak kullanılacak kaynak sayısı")
     score_threshold: float = Field(default=0.35, ge=0.0, le=1.0, description="Min benzerlik eşiği")
+    source: str | None = Field(default=None, description="Filtrelenecek kaynak dosya adı (PDF)")
 
 class CitationItem(BaseModel):
     source: str = Field(..., description="Kaynak dosya adı")
@@ -96,6 +98,8 @@ class AskResponse(BaseModel):
     answer: str = Field(..., description="Yapay zeka tarafından üretilen güvenilir cevap")
     citations: list[CitationItem] = Field(..., description="Cevap için kullanılan kaynak referansları")
     latency_seconds: float = Field(..., description="Toplam işlem süresi (Arama + LLM)")
+    faithfulness: float | None = Field(default=None, description="Cevabın bağlama sadakat skoru (0-1)")
+    answer_relevance: float | None = Field(default=None, description="Cevabın soruyla alaka skoru (0-1)")
 
 class HealthResponse(BaseModel):
     status: str = Field(..., description="Genel sistem durumu (healthy / unhealthy)")
@@ -255,7 +259,8 @@ def search_documents(request: SearchRequest):
             collection_name=COLLECTION_NAME,
             query=request.query,
             limit=candidate_limit,
-            score_threshold=request.score_threshold
+            score_threshold=request.score_threshold,
+            source_filter=request.source
         )
         
         # Rerank işlemi
@@ -285,6 +290,80 @@ def search_documents(request: SearchRequest):
         raise HTTPException(status_code=500, detail=f"Arama işlemi sırasında bir sunucu hatası oluştu: {str(e)}")
 
 
+def evaluate_rag_response(question: str, context: str, answer: str) -> dict:
+    """
+    Ragas benzeri bir değerlendirme yapar. Gemini API kullanarak üretilen cevabın 
+    bağlama sadakatini (faithfulness) ve soruyla olan alakasını (answer_relevance) puanlar.
+    """
+    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    if not gemini_key:
+        logger.warning("Gemini API key eksik, değerlendirme yapılamadı.")
+        return {"faithfulness": None, "answer_relevance": None}
+        
+    model_name = "gemini-2.5-flash"
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
+    
+    prompt = f"""
+Sana bir kullanıcı sorusu, bu soruya cevap olarak verilen bağlam (context) bilgileri ve üretilen cevap (answer) sunulmaktadır.
+Bu RAG sisteminin çıktısını değerlendirmen gerekiyor. İki adet skor üreteceksin:
+
+1. **Faithfulness (Sadakat - 0.0 ile 1.0 arasında):** Üretilen cevaptaki tüm iddialar ve bilgiler verilen bağlam (context) bilgisi tarafından doğrudan destekleniyor mu? 
+   - Eğer cevaptaki tüm bilgiler bağlamda mevcutsa skor 1.0 olmalıdır.
+   - Eğer cevap bağlamda olmayan veya onunla çelişen uydurma (halüsinasyon) bilgiler içeriyorsa skor düşük olmalıdır.
+   
+2. **Answer Relevance (Soru Alakası - 0.0 ile 1.0 arasında):** Üretilen cevap doğrudan kullanıcının sorduğu soruyu yanıtlıyor mu?
+   - Cevap soruyu tam ve net yanıtlıyorsa skor 1.0 olmalıdır.
+   - Cevap dolaylı yoldan yanıtlıyorsa veya konuyu saptırıyorsa skor düşük olmalıdır.
+
+Lütfen yanıtını SADECE aşağıdaki JSON formatında ver. Başka hiçbir açıklama, markdown işareti veya ek metin ekleme.
+JSON Şeması:
+{{"faithfulness": <float>, "answer_relevance": <float>}}
+
+BAĞLAM (CONTEXT):
+{context}
+
+SORU:
+{question}
+
+CEVAP (ANSWER):
+{answer}
+"""
+
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.0,
+            "responseMimeType": "application/json"
+        }
+    }
+    
+    try:
+        logger.info("RAG cevabı Gemini ile değerlendiriliyor...")
+        response = requests.post(api_url, json=payload, timeout=8)
+        if response.status_code == 200:
+            import json
+            response_json = response.json()
+            raw_text = response_json["candidates"][0]["content"]["parts"][0]["text"].strip()
+            scores = json.loads(raw_text)
+            logger.info(f"Gemini Değerlendirme Skorları: {scores}")
+            return {
+                "faithfulness": round(float(scores.get("faithfulness", 0.0)), 2),
+                "answer_relevance": round(float(scores.get("answer_relevance", 0.0)), 2)
+            }
+        else:
+            logger.warning(f"Değerlendirme API hatası: {response.status_code} - {response.text}")
+    except Exception as e:
+        logger.warning(f"Değerlendirme sırasında hata oluştu: {e}")
+        
+    return {"faithfulness": None, "answer_relevance": None}
+
+
 @app.post("/api/v1/ask", response_model=AskResponse)
 def ask_question(request: AskRequest):
     """
@@ -299,7 +378,8 @@ def ask_question(request: AskRequest):
             collection_name=COLLECTION_NAME,
             query=request.question,
             limit=candidate_limit,
-            score_threshold=request.score_threshold
+            score_threshold=request.score_threshold,
+            source_filter=request.source
         )
         
         # 2. Adım: Cross-Encoder ile en alakalı makale parçalarını Rerank et
@@ -472,6 +552,16 @@ def ask_question(request: AskRequest):
                 "`GEMINI_API_KEY=your_api_key` ekleyin ve sunucuyu yeniden başlatın.*"
             )
         
+        # Ragas benzeri değerlendirme yapalım
+        eval_scores = {"faithfulness": None, "answer_relevance": None}
+        # Sadece geçerli bir cevap alındıysa değerlendir
+        if ai_answer and "Aranan bilgi indekslenmiş akademik belgelerde bulunamadı" not in ai_answer and citations:
+            eval_scores = evaluate_rag_response(
+                question=request.question,
+                context=context_str,
+                answer=ai_answer
+            )
+
         latency = time.time() - start_time
         
         # Langfuse Tracing
@@ -483,7 +573,19 @@ def ask_question(request: AskRequest):
                     output={"answer": ai_answer, "citations_count": len(citations)},
                     metadata={"latency_seconds": latency}
                 )
-                logger.info("Langfuse ask trace başarıyla gönderildi.")
+                if eval_scores.get("faithfulness") is not None:
+                    langfuse.score(
+                        trace_id=trace.id,
+                        name="faithfulness",
+                        value=eval_scores["faithfulness"]
+                    )
+                if eval_scores.get("answer_relevance") is not None:
+                    langfuse.score(
+                        trace_id=trace.id,
+                        name="answer_relevance",
+                        value=eval_scores["answer_relevance"]
+                    )
+                logger.info("Langfuse ask trace ve değerlendirme skorları başarıyla gönderildi.")
             except Exception as trace_err:
                 logger.warning(f"Langfuse trace gönderim hatası: {trace_err}")
         
@@ -491,7 +593,9 @@ def ask_question(request: AskRequest):
             question=request.question,
             answer=ai_answer,
             citations=citations,
-            latency_seconds=round(latency, 4)
+            latency_seconds=round(latency, 4),
+            faithfulness=eval_scores.get("faithfulness"),
+            answer_relevance=eval_scores.get("answer_relevance")
         )
         
     except Exception as e:

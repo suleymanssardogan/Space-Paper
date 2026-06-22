@@ -114,15 +114,17 @@ async function handleQuery(event) {
     
     const limit = parseInt(document.getElementById('param-limit').value);
     const scoreThreshold = parseFloat(document.getElementById('param-threshold').value);
+    const sourceSelect = document.getElementById('param-source');
+    const source = sourceSelect ? sourceSelect.value : '';
     
     const submitBtn = document.getElementById('submit-btn');
     submitBtn.disabled = true;
     
     try {
         if (currentMode === 'ask') {
-            await executeAskQuery(queryText, limit, scoreThreshold);
+            await executeAskQuery(queryText, limit, scoreThreshold, source);
         } else {
-            await executeSearchQuery(queryText, limit, scoreThreshold);
+            await executeSearchQuery(queryText, limit, scoreThreshold, source);
         }
     } catch (err) {
         console.error("Query Execution Error:", err);
@@ -148,12 +150,19 @@ function showError(msg) {
     document.getElementById('error-card').classList.remove('hidden');
 }
 
+// Get score CSS class helper
+function getScoreClass(score) {
+    if (score >= 0.8) return 'eval-good';
+    if (score >= 0.5) return 'eval-warn';
+    return 'eval-poor';
+}
+
 // Execute RAG Ask Query
-async function executeAskQuery(question, limit, scoreThreshold) {
+async function executeAskQuery(question, limit, scoreThreshold, source) {
     const response = await fetch(`${API_BASE}/api/v1/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, limit, score_threshold: scoreThreshold })
+        body: JSON.stringify({ question, limit, score_threshold: scoreThreshold, source: source || null })
     });
     
     if (!response.ok) {
@@ -167,6 +176,22 @@ async function executeAskQuery(question, limit, scoreThreshold) {
     // Display Answer
     document.getElementById('ai-answer-text').innerHTML = formatAnswer(data.answer);
     document.getElementById('ask-latency-badge').textContent = `Latency: ${data.latency_seconds.toFixed(3)}s`;
+    
+    // Render Evaluation Scores
+    const evalScoresArea = document.getElementById('eval-scores-area');
+    const evalFaithfulnessVal = document.getElementById('eval-faithfulness-val');
+    const evalRelevanceVal = document.getElementById('eval-relevance-val');
+    
+    if (data.faithfulness !== null && data.faithfulness !== undefined) {
+        evalScoresArea.classList.remove('hidden');
+        evalFaithfulnessVal.textContent = data.faithfulness.toFixed(2);
+        evalFaithfulnessVal.className = 'eval-score-val ' + getScoreClass(data.faithfulness);
+        
+        evalRelevanceVal.textContent = data.answer_relevance.toFixed(2);
+        evalRelevanceVal.className = 'eval-score-val ' + getScoreClass(data.answer_relevance);
+    } else {
+        evalScoresArea.classList.add('hidden');
+    }
     
     // Render Citations
     const citationsContainer = document.getElementById('citations-container');
@@ -204,7 +229,7 @@ async function executeAskQuery(question, limit, scoreThreshold) {
         });
         
         // Enrich tiles with actual texts from parallel search query
-        fetchTextSnippetsForCitations(question, limit, scoreThreshold);
+        fetchTextSnippetsForCitations(question, limit, scoreThreshold, source);
         
         document.getElementById('citations-card').classList.remove('hidden');
     } else {
@@ -215,11 +240,11 @@ async function executeAskQuery(question, limit, scoreThreshold) {
 }
 
 // Execute Semantic Search Query
-async function executeSearchQuery(query, limit, scoreThreshold) {
+async function executeSearchQuery(query, limit, scoreThreshold, source) {
     const response = await fetch(`${API_BASE}/api/v1/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, limit, score_threshold: scoreThreshold })
+        body: JSON.stringify({ query, limit, score_threshold: scoreThreshold, source: source || null })
     });
     
     if (!response.ok) {
@@ -269,12 +294,12 @@ async function executeSearchQuery(query, limit, scoreThreshold) {
 }
 
 // Parallel fetch search chunks to populate citation tiles
-async function fetchTextSnippetsForCitations(query, limit, scoreThreshold) {
+async function fetchTextSnippetsForCitations(query, limit, scoreThreshold, source) {
     try {
         const response = await fetch(`${API_BASE}/api/v1/search`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query, limit, score_threshold: scoreThreshold })
+            body: JSON.stringify({ query, limit, score_threshold: scoreThreshold, source: source || null })
         });
         if (response.ok) {
             const data = await response.json();

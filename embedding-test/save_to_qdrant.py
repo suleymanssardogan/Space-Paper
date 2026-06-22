@@ -41,12 +41,27 @@ class SpaceScienceVectorStore:
         try: 
             if self.client.collection_exists(collection_name=collection_name):
                 logger.info(f"Collection already exists: {collection_name}")
+                # Mevcut koleksiyon için source endeksini oluştur (hata verirse yok say)
+                try:
+                    self.client.create_payload_index(
+                        collection_name=collection_name,
+                        field_name="source",
+                        field_schema="keyword"
+                    )
+                except Exception as ex:
+                    logger.debug(f"Source index checking: {ex}")
                 return
             
             logger.info(f"Creating collection: {collection_name}")
+            from qdrant_client.models import HnswConfigDiff
             self.client.create_collection(
                 collection_name=collection_name,
-                vectors_config=VectorParams(size=384, distance=Distance.COSINE)
+                vectors_config=VectorParams(size=384, distance=Distance.COSINE),
+                hnsw_config=HnswConfigDiff(
+                    m=16,
+                    ef_construct=100,
+                    full_scan_threshold=10000
+                )
             )
             
             # Tam metin araması (Full-text keyword matching) için indeks oluştur
@@ -54,6 +69,13 @@ class SpaceScienceVectorStore:
                 collection_name=collection_name,
                 field_name="text",
                 field_schema="text"
+            )
+            
+            # Kaynak filtreleme için indeks oluştur
+            self.client.create_payload_index(
+                collection_name=collection_name,
+                field_name="source",
+                field_schema="keyword"
             )
             logger.info(f"Collection created with text payload index: {collection_name}")
 
@@ -98,20 +120,34 @@ class SpaceScienceVectorStore:
             logger.error(f"Upsert işlemi sırasında hata oluştu: {e}")
             raise e
     #Semantic search
-    def search_documents(self, collection_name: str, query: str, limit: int = 3, score_threshold: float = None):
+    def search_documents(self, collection_name: str, query: str, limit: int = 3, score_threshold: float = None, source_filter: str = None):
         try:
             start_time=time.time()
-            logger.info(f"Sorgu için arama yapılıyor: '{query}'")
+            logger.info(f"Sorgu için arama yapılıyor: '{query}' (Kaynak Filtresi: {source_filter})")
 
             # 1. Sorgu cümlesini vektörleştirme
             query_vector = self.encode([query])[0]
 
-            # 2. Qdrant üzerinde arama yapma
+            # 2. Ön-filtreleme (Pre-filtering) oluşturma
+            query_filter = None
+            if source_filter:
+                from qdrant_client.models import Filter, FieldCondition, MatchValue
+                query_filter = Filter(
+                    must=[
+                        FieldCondition(
+                            key="source",
+                            match=MatchValue(value=source_filter)
+                        )
+                    ]
+                )
+
+            # 3. Qdrant üzerinde arama yapma
             results = self.client.query_points(
                 collection_name=collection_name,
                 query = query_vector,
                 limit=limit,
-                score_threshold=score_threshold
+                score_threshold=score_threshold,
+                query_filter=query_filter
             )
 
             # 3.Latency Ölçme
