@@ -137,12 +137,12 @@ def get_local_reranker():
     global _local_reranker
     if _local_reranker is None:
         try:
-            from sentence_transformers import CrossEncoder
-            logger.info("Yerel Cross-Encoder reranker yükleniyor: cross-encoder/ms-marco-MiniLM-L-6-v2")
-            _local_reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
-        except ImportError:
-            logger.warning("sentence-transformers paketi bulunamadı, yerel reranking kullanılamaz.")
-            raise RuntimeError("sentence-transformers paketi yüklü değil, yerel reranker devre dışı.")
+            from fastembed.rerank.cross_encoder import TextCrossEncoder
+            logger.info("Yerel ONNX Cross-Encoder reranker yükleniyor: Xenova/ms-marco-MiniLM-L-6-v2")
+            _local_reranker = TextCrossEncoder(model_name="Xenova/ms-marco-MiniLM-L-6-v2", threads=1)
+        except Exception as e:
+            logger.warning(f"Yerel ONNX reranker yüklenemedi: {e}")
+            raise RuntimeError(f"Yerel ONNX reranker başlatılamadı: {e}")
     return _local_reranker
 
 def rerank_documents(query: str, raw_results: list, limit: int) -> list:
@@ -178,8 +178,7 @@ def rerank_documents(query: str, raw_results: list, limit: int) -> list:
     # Yerel MiniLM Reranking (Local Fallback)
     try:
         model = get_local_reranker()
-        pairs = [[query, doc] for doc in docs]
-        scores = model.predict(pairs)
+        scores = list(model.rerank(query, docs))
         
         scored_points = []
         for idx, score in enumerate(scores):

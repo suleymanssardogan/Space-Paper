@@ -132,6 +132,10 @@ def run_daily_ingestion(category: str = "astro-ph.CO", max_results: int = 3):
     else:
         logger.warning("İndirilen makalelerden geçerli metin parçası (chunk) çıkarılamadı.")
         
+    # Belleği anında serbest bırakmak için Garbage Collector'ı tetikleyelim
+    import gc
+    gc.collect()
+    
     return success_count
 
 if __name__ == "__main__":

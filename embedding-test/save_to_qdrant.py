@@ -1,3 +1,4 @@
+from accelerate import logging
 import os
 import time
 import logging
@@ -6,7 +7,8 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams,Distance,PointStruct
 from fastembed import TextEmbedding
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 class SpaceScienceVectorStore:

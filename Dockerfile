@@ -19,6 +19,14 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/embedding-test
 ENV HF_HOME=/tmp/huggingface
 
+# Limit threading for ONNX Runtime and linear algebra libraries to optimize memory usage
+ENV OMP_NUM_THREADS=1
+ENV MKL_NUM_THREADS=1
+ENV OPENBLAS_NUM_THREADS=1
+ENV VECLIB_MAXIMUM_THREADS=1
+ENV NUMEXPR_NUM_THREADS=1
+
+
 WORKDIR /app
 
 # Create a non-privileged user that the app will run under.
@@ -44,8 +52,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=bind,source=requirements.txt,target=requirements.txt \
     python -m pip install -r requirements.txt
 
-# Pre-download the FastEmbed ONNX model
+# Pre-download the FastEmbed ONNX models (Embedding and Reranker)
 RUN python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='sentence-transformers/all-MiniLM-L6-v2')"
+RUN python -c "from fastembed.rerank.cross_encoder import TextCrossEncoder; TextCrossEncoder(model_name='Xenova/ms-marco-MiniLM-L-6-v2')"
+
 
 # Make cache directory writable by non-root user
 RUN chmod -R 777 /tmp/huggingface
