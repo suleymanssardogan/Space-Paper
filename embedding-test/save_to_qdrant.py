@@ -1,4 +1,3 @@
-from accelerate import logging
 import os
 import time
 import logging
@@ -33,7 +32,8 @@ class SpaceScienceVectorStore:
             self.client = QdrantClient(host, timeout=60)
 
         # 384 boyutlu vektör üreten modelmizi yükleme (fastembed kullanarak bellek tüketimini düşürüyoruz)
-        self.model = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        # threads=1 parametresi ile bellek ve CPU kullanımını optimize ediyoruz.
+        self.model = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2", threads=1)
 
     def encode(self, texts: list[str]) -> list[list[float]]:
         """Fastembed kullanarak metinleri vektörleştirir."""
