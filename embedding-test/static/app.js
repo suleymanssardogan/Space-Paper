@@ -12,9 +12,43 @@ let searchResultsData = []; // Store raw results for citation modal reference
 // Initialize UI and run first diagnostics check
 document.addEventListener('DOMContentLoaded', () => {
     runDiagnostics();
+    loadSources();
     // Start polling diagnostics every 30 seconds
     healthTimer = setInterval(runDiagnostics, 30000);
 });
+
+// Fetch and populate the PDF sources filter dropdown dynamically
+async function loadSources() {
+    const sourceSelect = document.getElementById('param-source');
+    if (!sourceSelect) return;
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/v1/sources`);
+        if (!response.ok) throw new Error("Status: " + response.status);
+        const sources = await response.json();
+        
+        // Keep only the default "Tüm Kaynaklar (Filtresiz)" option
+        sourceSelect.innerHTML = '<option value="">Tüm Kaynaklar (Filtresiz)</option>';
+        
+        sources.forEach(src => {
+            const opt = document.createElement('option');
+            opt.value = src;
+            
+            // Format display name nicely
+            let displayName = src;
+            if (src === 'jwst_performance.pdf') {
+                displayName = 'jwst_performance.pdf (JWST Performans)';
+            } else if (src === 'kepler_mission.pdf') {
+                displayName = 'kepler_mission.pdf (Kepler Görevi)';
+            }
+            
+            opt.textContent = displayName;
+            sourceSelect.appendChild(opt);
+        });
+    } catch (error) {
+        console.error("Failed to load PDF sources:", error);
+    }
+}
 
 // Update display parameters
 function updateLimitValue(val) {
@@ -489,9 +523,10 @@ async function triggerArxivIngest() {
         ingestStatus.style.color = 'var(--accent-green)';
         ingestStatus.innerHTML = `<i class="fa-solid fa-circle-check"></i> ${data.papers_ingested} yeni makale başarıyla eklendi!`;
         
-        // Refresh diagnostics to update total vector count
+        // Refresh diagnostics and sources to update total vector count and dropdown
         setTimeout(() => {
             runDiagnostics();
+            loadSources();
         }, 1500);
         
     } catch (err) {

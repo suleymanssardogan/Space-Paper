@@ -246,6 +246,37 @@ def health_check():
         latency_seconds=round(latency, 4)
     )
 
+@app.get("/api/v1/sources", response_model=list[str])
+def get_unique_sources():
+    """
+    Qdrant veritabanındaki tüm benzersiz kaynak (source) PDF dosyalarının listesini döner.
+    """
+    try:
+        if not store.client.collection_exists(collection_name=COLLECTION_NAME):
+            return []
+        
+        sources = set()
+        offset = None
+        while True:
+            res, next_offset = store.client.scroll(
+                collection_name=COLLECTION_NAME,
+                limit=1000,
+                with_payload=["source"],
+                with_vectors=False,
+                offset=offset
+            )
+            for point in res:
+                if point.payload and "source" in point.payload:
+                    sources.add(point.payload["source"])
+            if not next_offset:
+                break
+            offset = next_offset
+            
+        return sorted(list(sources))
+    except Exception as e:
+        logger.error(f"Benzersiz kaynaklar listelenirken hata: {e}")
+        raise HTTPException(status_code=500, detail=f"Kaynak listesi alınamadı: {str(e)}")
+
 @app.post("/api/v1/search", response_model=SearchResponse)
 def search_documents(request: SearchRequest):
     """
