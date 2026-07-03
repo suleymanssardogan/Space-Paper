@@ -3,8 +3,18 @@ import time
 import logging
 from qdrant_client import QdrantClient
 
-from qdrant_client.models import VectorParams,Distance,PointStruct
-from fastembed import TextEmbedding
+from qdrant_client.models import (
+    VectorParams,
+    Distance,
+    PointStruct,
+    SparseVector,
+    SparseVectorParams,
+    SparseIndexParams,
+    Prefetch,
+    FusionQuery,
+    Fusion
+)
+from fastembed import TextEmbedding, SparseTextEmbedding
 
 logging.basicConfig(
 level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -34,10 +44,18 @@ class SpaceScienceVectorStore:
         # 384 boyutlu vektör üreten modelmizi yükleme (fastembed kullanarak bellek tüketimini düşürüyoruz)
         # threads=1 parametresi ile bellek ve CPU kullanımını optimize ediyoruz.
         self.model = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2", threads=1)
+        self.sparse_model = SparseTextEmbedding(model_name="Qdrant/bm25", threads=1)
 
     def encode(self, texts: list[str]) -> list[list[float]]:
         """Fastembed kullanarak metinleri vektörleştirir."""
         return [emb.tolist() for emb in self.model.embed(texts)]
+
+    def encode_sparse(self, texts: list[str]) -> list[dict]:
+        """Fastembed kullanarak metinlerin sparse vektörlerini (indices ve values) üretir."""
+        return [
+            {"indices": emb.indices.tolist(), "values": emb.values.tolist()}
+            for emb in self.sparse_model.embed(texts)
+        ]
 
     def init_collection(self, collection_name: str):
         try: 
@@ -59,6 +77,13 @@ class SpaceScienceVectorStore:
             self.client.create_collection(
                 collection_name=collection_name,
                 vectors_config=VectorParams(size=384, distance=Distance.COSINE),
+                sparse_vectors_config={
+                    "sparse-text": SparseVectorParams(
+                        index=SparseIndexParams(
+                            on_disk=False,
+                        )
+                    )
+                },
                 hnsw_config=HnswConfigDiff(
                     m=16,
                     ef_construct=100,
@@ -89,10 +114,11 @@ class SpaceScienceVectorStore:
     def upsert_documents(self,collection_name:str,documents:list[str]):
         try:
             start_time = time.time()
-            logger.info(f"{len(documents)} ader doküman için embedding üretiliyor...")
+            logger.info(f"{len(documents)} adet doküman için embedding üretiliyor...")
 
-            # 1. Cümlelerin vektörleri çıkartmak
+            # 1. Cümlelerin vektörlerini ve sparse vektörlerini çıkartmak
             embeddings = self.encode(documents)
+            sparse_embeddings = self.encode_sparse(documents)
 
             # 2. Qdrant Point'lerini (PointStruct) hazırlamak
             points =[]
@@ -100,12 +126,17 @@ class SpaceScienceVectorStore:
                 points.append(
                     PointStruct(
                         id =i,
-                        vector=embeddings[i],
+                        vector={
+                            "": embeddings[i],
+                            "sparse-text": SparseVector(
+                                indices=sparse_embeddings[i]["indices"],
+                                values=sparse_embeddings[i]["values"]
+                            )
+                        },
                         payload={
                             "text":doc,
                             "source":"space_paper_archive",
                             "char_count":len(doc)
-
                         }
                     )
                 )
@@ -121,14 +152,16 @@ class SpaceScienceVectorStore:
         except Exception as e:
             logger.error(f"Upsert işlemi sırasında hata oluştu: {e}")
             raise e
-    #Semantic search
+    #Hybrid search
     def search_documents(self, collection_name: str, query: str, limit: int = 3, score_threshold: float = None, source_filter: str = None):
         try:
             start_time=time.time()
-            logger.info(f"Sorgu için arama yapılıyor: '{query}' (Kaynak Filtresi: {source_filter})")
+            logger.info(f"Sorgu için hibrid arama yapılıyor: '{query}' (Kaynak Filtresi: {source_filter})")
 
             # 1. Sorgu cümlesini vektörleştirme
             query_vector = self.encode([query])[0]
+            sparse_vec = self.encode_sparse([query])[0]
+            sparse_q = SparseVector(indices=sparse_vec["indices"], values=sparse_vec["values"])
 
             # 2. Ön-filtreleme (Pre-filtering) oluşturma
             query_filter = None
@@ -143,16 +176,29 @@ class SpaceScienceVectorStore:
                     ]
                 )
 
-            # 3. Qdrant üzerinde arama yapma
+            # 3. Qdrant üzerinde hibrid arama yapma (Prefetch ve RRF)
+            # score_threshold parametresini sadece dense prefetch adımına uyguluyoruz.
             results = self.client.query_points(
                 collection_name=collection_name,
-                query = query_vector,
+                prefetch=[
+                    Prefetch(
+                        query=query_vector,
+                        using="",
+                        limit=limit * 2,
+                        score_threshold=score_threshold
+                    ),
+                    Prefetch(
+                        query=sparse_q,
+                        using="sparse-text",
+                        limit=limit * 2
+                    )
+                ],
+                query=FusionQuery(fusion=Fusion.RRF),
                 limit=limit,
-                score_threshold=score_threshold,
                 query_filter=query_filter
             )
 
-            # 3.Latency Ölçme
+            # 4.Latency Ölçme
             latency = time.time() - start_time
             logger.info(f"Arama işlemi {latency:.2f} saniye sürdü")
             

@@ -8,7 +8,7 @@ load_dotenv()
 
 from ingest_pdfs import DocumetPipeline
 from save_to_qdrant import SpaceScienceVectorStore
-from qdrant_client.models import PointStruct
+from qdrant_client.models import PointStruct, SparseVector
 
 # Loglama ayarları
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -28,17 +28,25 @@ def bulk_upsert_chunks(store: SpaceScienceVectorStore, collection_name: str, chu
         # 1. Mevcut batch içindeki metinleri topla ve topluca embedding üret
         batch_texts = [c["text"] for c in batch]
         embeddings = store.encode(batch_texts)
+        sparse_embeddings = store.encode_sparse(batch_texts)
         
         # 2. Qdrant PointStruct listesini oluştur
         points = []
         for idx, chunk in enumerate(batch):
             # Idempotency sağlamak için metinden deterministik UUID üretiyoruz
             point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk["text"]))
+            sparse_emb = sparse_embeddings[idx]
             
             points.append(
                 PointStruct(
                     id=point_id,
-                    vector=embeddings[idx],
+                    vector={
+                        "": embeddings[idx],
+                        "sparse-text": SparseVector(
+                            indices=sparse_emb["indices"],
+                            values=sparse_emb["values"]
+                        )
+                    },
                     payload={
                         "text": chunk["text"],
                         "source": chunk["source"],
