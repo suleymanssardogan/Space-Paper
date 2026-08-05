@@ -33,7 +33,7 @@ flowchart TD
         Cron[GitHub Actions Daily Cron / 05:00 UTC] -->|1. Scrape| Scrap[arXiv API Scraper]
         Scrap -->|2. Download| PDF[PyPDF Document Loader]
         PDF -->|3. Segment| Split[RecursiveCharacterTextSplitter]
-        Split -->|4. Embed| FE[FastEmbed Model / ONNX]
+        Split -->|4. Embed| FE[FastEmbed Dense & Sparse / ONNX]
         FE -->|5. Hash| UUID[Deterministic UUID5 Generator]
         UUID -->|6. Load| QC[(Qdrant Cloud DB)]
     end
@@ -41,9 +41,9 @@ flowchart TD
     subgraph Query_Pipeline [2. Arama ve Yanıt Üretim Hattı / RAG Query]
         direction TB
         User([Kullanıcı Sorusu]) -->|1. Gönder| Web[Dashboard UI]
-        Web -->|2. Yönlendir| API[FastAPI Gateway]
-        API -->|3. Vektörleştir| FE_Q[FastEmbed Client-side]
-        FE_Q -->|4. Ara| QC
+        Web -->|2. Filtrele & Sor| API[FastAPI Gateway]
+        API -->|3. Vektörleştir| FE_Q[FastEmbed Dense & Sparse]
+        FE_Q -->|4. Hibrit Arama & RRF| QC
         QC -->|5. En Yakın 9 Parçayı Getir| Rerank{Reranker Pipeline}
         
         Rerank -->|Seçenek A| Cohere[Cohere Rerank API]
@@ -74,10 +74,12 @@ flowchart TD
 ```
 
 ### Teknik İş Akışı Detayları:
-1. **Otomatik İndeksleme:** Günlük tetiklenen GitHub Actions akışı ile arXiv üzerindeki kozmoloji ve astrofizik makaleleri taranır, `PyPDF` ile okunur, `RecursiveCharacterTextSplitter` ile 800 karakterlik parçalara bölünür ve ONNX formatındaki **FastEmbed** (`all-MiniLM-L6-v2`) modeliyle vektörleştirilerek **Qdrant Cloud**'a yüklenir.
+1. **Otomatik İndeksleme:** Günlük tetiklenen GitHub Actions akışı ile arXiv üzerindeki kozmoloji ve astrofizik makaleleri taranır, `PyPDF` ile okunur, `RecursiveCharacterTextSplitter` ile 800 karakterlik parçalara bölünür. ONNX formatındaki **FastEmbed** kütüphanesi kullanılarak hem **Dense** (`all-MiniLM-L6-v2`) hem de **Sparse** (`Qdrant/bm25`) vektörleri üretilir ve **Qdrant Cloud**'a yüklenir.
 2. **Idempotency (UUID5):** Çift kayıtları önlemek için her metin parçasının deterministik UUID5 karması (hash) oluşturulur.
-3. **Akıllı Sıralama (Reranking):** Qdrant'tan gelen ilk 9 sonuç, **Cohere Rerank** (veya hata durumunda yerel **Cross-Encoder**) ile tekrar sıralanarak en alakalı 3 parçaya düşürülür.
-4. **Çoklu LLM Desteği:** Birincil model olarak **Gemini 2.5 Flash** kullanılır. API limitleri veya kesintilerde **OpenRouter** üzerinden yedek modellere, internet yoksa doğrudan ham arama sonuçlarına (Offline Mode) düşüş (fallback) sağlanır.
+3. **Hibrit Arama (Dense + Sparse) ve RRF:** Kullanıcı sorgusu hem dense hem de sparse (BM25) olarak vektörleştirilir. Qdrant'ın `query_points` API'si ve **RRF (Reciprocal Rank Fusion)** algoritması kullanılarak iki arama sonucundan en alakalı adaylar birleştirilir.
+4. **Ön-Filtreleme (Pre-filtering):** Kullanıcı arayüzden belirli bir kaynak makale seçtiğinde, Qdrant üzerinde `source` alanı için tanımlı `keyword` indeksi kullanılarak ön-filtreleme uygulanır ve arama alanı daraltılır.
+5. **Akıllı Sıralama (Reranking):** Qdrant'tan gelen ilk 9 aday, **Cohere Rerank** (veya hata durumunda yerel **Cross-Encoder**) ile tekrar sıralanarak en alakalı 3 parçaya düşürülür.
+6. **Çoklu LLM Desteği:** Birincil model olarak **Gemini 2.5 Flash** kullanılır. API limitleri veya kesintilerde **OpenRouter** üzerinden yedek modellere, internet yoksa doğrudan ham arama sonuçlarına (Offline Mode) düşüş (fallback) sağlanır.
 
 ---
 
@@ -86,7 +88,7 @@ flowchart TD
 ### Sistem Çıktıları (Outputs)
 * **Kullanıcı Yanıtı:** Kullanıcıya sunulan, doğrudan veritabanındaki makalelere dayanan, halüsinasyon içermeyen teknik cevaplar.
 * **Kaynak ve Sayfa Numaraları:** Cevapta yer alan iddiaların hangi belgeden ve hangi sayfadan alındığını gösteren referanslar (Örn: `[Kepler-Mission.pdf, Page 12]`).
-* **Çalışma Zamanı Metrikleri:** Her RAG yanıtı için hesaplanan **Faithfulness** (Güvenilirlik - cevabın kaynağa sadık kalma oranı) ve **Answer Relevance** (Cevap Uygunluğu - cevabın soruyla ne kadar alakalı olduğu) skorları (0.0 - 1.0 arası).
+* **Çalışma Zamanı RAGAs Metrikleri (Dinamik):** Her RAG yanıtı için Gemini API yardımıyla çalışma zamanında hesaplanan **Faithfulness** (Güvenilirlik) ve **Answer Relevance** (Cevap Uygunluğu) skorları (0.0 - 1.0 arası). Bu skorlar statik veya hard-coded değildir, LLM-as-a-judge prensibiyle anlık üretilir.
 
 ### Sistem Monitörleme (Observability & Monitoring)
 Sistemin performansı ve kalitesi iki temel sütun üzerinden izlenir:
@@ -95,25 +97,32 @@ Sistemin performansı ve kalitesi iki temel sütun üzerinden izlenir:
    * Hangi aşamada gecikme yaşandığı (bottleneck) veya hangi API'nin hata verdiği görsel olarak izlenebilir.
 2. **Kullanıcı Geri Bildirim Döngüsü (Feedback Loop):**
    * Arayüzdeki beğenme/beğenmeme (thumbs up/down) butonları aracılığıyla toplanan kullanıcı geri bildirimleri, doğrudan ilgili sorgunun Langfuse üzerindeki izleme kaydına (trace) bağlanır. Bu sayede kalitesiz cevap üreten sorgular kolayca tespit edilip optimize edilebilir.
-3. **Çalışma Zamanı Değerlendirmesi (Runtime Evaluation):**
-   * Gemini API'nin JSON modu kullanılarak, LLM-as-a-judge yöntemiyle her yanıt için anlık güvenilirlik testi yapılır. Düşük puan alan yanıtlar loglanır.
+3. **Çalışma Zamanı Değerlendirmesi (Runtime Evaluation - RAGAs):**
+   * **Dinamik Değerlendirme:** Sunucuda geçerli bir `GEMINI_API_KEY` tanımlıysa, Gemini 2.5 Flash modeli JSON modunda çalıştırılarak LLM-as-a-judge yöntemiyle üretilen her yanıt için anlık güvenilirlik ve alaka testleri yapılır.
+   * **Koşullu Çalışma:** Eğer API anahtarı tanımlı değilse, arama ve cevaplama fonksiyonu kesintiye uğramadan çalışmaya devam eder; sadece değerlendirme skorları `N/A` (Null) döner ve UI üzerinde "RAGAs: Pasif (API Key Eksik)" uyarısı gösterilir.
+   * **Langfuse Entegrasyonu:** Üretilen dinamik skorlar, Langfuse aktifse asenkron olarak Langfuse sistemine gönderilerek panelde görselleştirilir.
 
 ---
 
 ## 🚀 4. Daha İyi Nasıl Yapılabilir, Gelecekte Geliştirilebilecek Yerler (Future Roadmap)
 
+### 🛠️ Gelecek Yol Haritası (Future Roadmap)
 1. **Multimodal (Çoklu Modlu) RAG Yapısı:**
    * **Mevcut Durum:** Makalelerdeki grafikler, tablolar ve görsel veriler şu an sadece metin parçaları olarak okunmaktadır.
    * **Geliştirme:** PDF sayfaları görsel olarak da analiz edilip Gemini'nin görsel anlama yeteneğiyle multimodal RAG kurgusu kurulabilir. Tablolar ve grafikler vektör veritabanına görsel-vektör olarak eklenebilir.
-2. **Hibrit Arama (Dense + Sparse Search):**
-   * **Mevcut Durum:** Arama sadece anlamsal benzerlik (Dense Vector) ile yapılmaktadır.
-   * **Geliştirme:** Qdrant'ın sunduğu Sparse Vector desteği ve BM25 entegrasyonu ile hibrit arama kurgulanarak spesifik katalog adları (örn: `NGC 1300`, `JWST-z-11`) veya matematiksel formüller için kelime eşleşme başarısı artırılabilir.
-3. **Ajan Tabanlı Kendi Kendini Düzeltme (Agentic Self-Correction Loop):**
+2. **Ajan Tabanlı Kendi Kendini Düzeltme (Agentic Self-Correction Loop):**
    * **Mevcut Durum:** Yanıt üretilir ve sadakat skoru düşük çıksa bile kullanıcıya gösterilir.
    * **Geliştirme:** Eğer üretilen yanıtın *Faithfulness* skoru belirli bir eşiğin altındaysa, sistem yanıtı kullanıcıya vermeden önce aramayı genişletip (Query Expansion) veya farklı parçaları çekip cevabı otomatik olarak düzeltecek bir ajan akışına dönüştürülebilir.
-4. **Semantik Parçalama (Semantic Chunking):**
+3. **Semantik Parçalama (Semantic Chunking):**
    * **Mevcut Durum:** Metinler sabit karakter sayılarına göre bölünmektedir.
    * **Geliştirme:** Metnin anlamsal akışına göre (paragraf geçişleri, konu değişimleri) akıllı semantik parçalama yapılarak bağlam bütünlüğü en üst seviyeye çıkarılabilir.
+
+### 🌟 Son Yapılan Geliştirmeler (Recent Features)
+* **Hibrit Arama (Dense + Sparse Search):** Qdrant'ın Sparse Vector desteği ve BM25 entegrasyonu (`Qdrant/bm25`) başarıyla sisteme entegre edildi. Dense arama (`all-MiniLM-L6-v2`) ve Sparse arama sonuçları RRF (Reciprocal Rank Fusion) ile birleştirilerek hibrit arama aktif hale getirildi.
+* **Kaynak Ön-Filtreleme (Pre-filtering):** Kullanıcıların aramayı ve RAG cevaplarını belirli bir kaynak doküman (PDF) ile sınırlandırabilmesi sağlandı. `source` alanı için Qdrant üzerinde keyword indeksi oluşturuldu.
+* **Dinamik RAGAs Değerlendirmesi:** Gemini 2.5 Flash kullanılarak her RAG sorgusu için gerçek zamanlı Faithfulness ve Answer Relevance skorlaması ve bu skorların Langfuse'a aktarımı sağlandı.
+* **Gelişmiş Arayüz Göstergeleri:** Kullanıcı paneline RAGAs değerlendirme durumu (Aktif / API Key Eksik) ve Ön-filtreleme durum rozetleri eklendi.
+* **Hafıza ve Performans Optimizasyonları:** FastEmbed modellerinin `threads=1` ile çalıştırılması, Docker konteynerında izin yönetimi ve Render üzerinde aşırı bellek tüketiminin (out-of-memory) önüne geçilmesi için ONNX reranker optimizasyonları tamamlandı.
 
 ---
 

@@ -1,6 +1,11 @@
 import sys
 import os
 
+# Disable TensorFlow/Keras 3 conflicts and tokenizers deadlock warnings
+os.environ["USE_TF"] = "0"
+os.environ["USE_TORCH"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 # Script'in bulunduğu dizini Python arama yoluna ekle (Docker/Render ortamları için)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -11,7 +16,7 @@ load_dotenv()
 import time
 import requests
 import logging
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -86,7 +91,7 @@ class SearchResponse(BaseModel):
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=1, description="Uzay bilimleriyle ilgili sorunuz")
     limit: int = Field(default=3, ge=1, le=10, description="Bağlam olarak kullanılacak kaynak sayısı")
-    score_threshold: float = Field(default=0.35, ge=0.0, le=1.0, description="Min benzerlik eşiği")
+    score_threshold: float = Field(default=0.20, ge=0.0, le=1.0, description="Min benzerlik eşiği")
     source: str | None = Field(default=None, description="Filtrelenecek kaynak dosya adı (PDF)")
 
 class CitationItem(BaseModel):
@@ -126,6 +131,12 @@ class IngestRequest(BaseModel):
 class IngestResponse(BaseModel):
     status: str = Field(..., description="İşlem durumu (success / error)")
     papers_ingested: int = Field(..., description="Başarıyla Qdrant'a yüklenen makale sayısı")
+    message: str = Field(..., description="Detaylı durum mesajı")
+
+class UploadResponse(BaseModel):
+    status: str = Field(..., description="İşlem durumu (success / error)")
+    filename: str = Field(..., description="Yüklenen PDF dosyasının adı")
+    chunks_indexed: int = Field(..., description="Vektör veritabanına indekslenen parça sayısı")
     message: str = Field(..., description="Detaylı durum mesajı")
 
 # --- 2. API ENDPOINTS ---
@@ -186,9 +197,30 @@ def rerank_documents(query: str, raw_results: list, limit: int) -> list:
             point.score = float(score)
             scored_points.append(point)
             
-        # Skorlara göre azalan sırada diz ve en alakalı 'limit' tanesini al
+        # Skorlara göre azalan sırada diz
         scored_points.sort(key=lambda x: x.score, reverse=True)
-        return scored_points[:limit]
+        
+        # Farklı sayfa/bölümlerden çeşitlilik sağlamak için unique (source, page) tercih et
+        selected_points = []
+        seen_pages = set()
+        
+        for p in scored_points:
+            key = (p.payload.get("source", ""), p.payload.get("page_number", 0))
+            if key not in seen_pages:
+                seen_pages.add(key)
+                selected_points.append(p)
+            if len(selected_points) >= limit:
+                break
+                
+        # Eğer yeterince farklı sayfa yoksa kalan en yüksek skorlularla tamamla
+        if len(selected_points) < limit:
+            for p in scored_points:
+                if p not in selected_points:
+                    selected_points.append(p)
+                if len(selected_points) >= limit:
+                    break
+                    
+        return selected_points
     except Exception as le:
         logger.error(f"Yerel rerank işleminde hata oluştu: {le}. İlk sonuçlar doğrudan dönülüyor.")
         return raw_results[:limit]
@@ -325,40 +357,54 @@ def search_documents(request: SearchRequest):
 
 def evaluate_rag_response(question: str, context: str, answer: str) -> dict:
     """
-    Ragas benzeri bir değerlendirme yapar. Gemini API kullanarak üretilen cevabın 
-    bağlama sadakatini (faithfulness) ve soruyla olan alakasını (answer_relevance) puanlar.
+    Evaluates RAG outputs using granular, critical claim verification and relevance criteria.
+    Returns realistic faithfulness and answer_relevance scores between 0.00 and 1.00.
     """
     gemini_key = os.getenv("GEMINI_API_KEY", "")
     if not gemini_key:
-        logger.warning("Gemini API key eksik, değerlendirme yapılamadı.")
+        logger.warning("Gemini API key missing, evaluation skipped.")
         return {"faithfulness": None, "answer_relevance": None}
         
     model_name = "gemini-2.5-flash"
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
     
     prompt = f"""
-Sana bir kullanıcı sorusu, bu soruya cevap olarak verilen bağlam (context) bilgileri ve üretilen cevap (answer) sunulmaktadır.
-Bu RAG sisteminin çıktısını değerlendirmen gerekiyor. İki adet skor üreteceksin:
+You are a rigorous scientific AI evaluator auditing a Retrieval-Augmented Generation (RAG) system.
+Your job is to critically evaluate the provided RAG output based on the user's question, retrieved context snippets, and generated answer.
 
-1. **Faithfulness (Sadakat - 0.0 ile 1.0 arasında):** Üretilen cevaptaki tüm iddialar ve bilgiler verilen bağlam (context) bilgisi tarafından doğrudan destekleniyor mu? 
-   - Eğer cevaptaki tüm bilgiler bağlamda mevcutsa skor 1.0 olmalıdır.
-   - Eğer cevap bağlamda olmayan veya onunla çelişen uydurma (halüsinasyon) bilgiler içeriyorsa skor düşük olmalıdır.
-   
-2. **Answer Relevance (Soru Alakası - 0.0 ile 1.0 arasında):** Üretilen cevap doğrudan kullanıcının sorduğu soruyu yanıtlıyor mu?
-   - Cevap soruyu tam ve net yanıtlıyorsa skor 1.0 olmalıdır.
-   - Cevap dolaylı yoldan yanıtlıyorsa veya konuyu saptırıyorsa skor düşük olmalıdır.
+Evaluate the output on two metrics:
 
-Lütfen yanıtını SADECE aşağıdaki JSON formatında ver. Başka hiçbir açıklama, markdown işareti veya ek metin ekleme.
-JSON Şeması:
-{{"faithfulness": <float>, "answer_relevance": <float>}}
+1. **Faithfulness (0.00 to 1.00)**:
+   - Extract all factual claims in the generated answer.
+   - Calculate the exact ratio of claims directly supported by the context versus unsupported or extrapolated claims.
+   - If the answer contains general knowledge or details NOT explicitly present in the provided context snippets, deduct points proportionally.
+   - If the answer states that the information is not found in the context or refuses to answer, score faithfulness as 0.00 (since no context evidence was utilized).
+   - Score guideline:
+     - 1.00: 100% of facts are explicitly substantiated by context without any extrapolation.
+     - 0.70 - 0.90: Answer is accurate, but uses mild general phrasing or minor assumptions not explicitly in context.
+     - 0.30 - 0.60: Significant unbacked claims, extrapolations, or partial hallucinations present.
+     - 0.00: Refusal, complete hallucination, or context is totally un-utilized.
 
-BAĞLAM (CONTEXT):
+2. **Answer Relevance (0.00 to 1.00)**:
+   - Measure how directly, completely, and specifically the generated answer addresses the exact user question.
+   - Deduct points if the answer is too brief, misses key parts of the user's inquiry, or includes redundant fluff.
+   - If the answer is a refusal ("information not found in context"), score answer_relevance as 0.00 to 0.20 (because the user's question went unanswered).
+   - Score guideline:
+     - 1.00: Directly, completely, and accurately answers every aspect of the user question.
+     - 0.70 - 0.90: Answers the core question well, but omits secondary nuances or details requested by the user.
+     - 0.30 - 0.60: Partially relevant, vague, or skirts around the primary topic.
+     - 0.00 - 0.20: Entirely off-topic or refusal to answer.
+
+Respond ONLY with a valid JSON object matching this exact schema:
+{{"reasoning": "<short critical analysis>", "faithfulness": <float between 0.00 and 1.00>, "answer_relevance": <float between 0.00 and 1.00>}}
+
+CONTEXT:
 {context}
 
-SORU:
+USER QUESTION:
 {question}
 
-CEVAP (ANSWER):
+GENERATED ANSWER:
 {answer}
 """
 
@@ -384,7 +430,7 @@ CEVAP (ANSWER):
             response_json = response.json()
             raw_text = response_json["candidates"][0]["content"]["parts"][0]["text"].strip()
             scores = json.loads(raw_text)
-            logger.info(f"Gemini Değerlendirme Skorları: {scores}")
+            logger.info(f"Gemini Değerlendirme Skorları & Analiz: {scores}")
             return {
                 "faithfulness": round(float(scores.get("faithfulness", 0.0)), 2),
                 "answer_relevance": round(float(scores.get("answer_relevance", 0.0)), 2)
@@ -405,8 +451,8 @@ def ask_question(request: AskRequest):
     try:
         start_time = time.time()
         
-        # 1. Adım: Qdrant'tan ilgili bağlam adaylarını (limit * 3) ara
-        candidate_limit = request.limit * 3
+        # 1. Adım: Qdrant'tan geniş bağlam adaylarını (limit * 5, min 15) ara
+        candidate_limit = max(request.limit * 5, 15)
         raw_results = store.search_documents(
             collection_name=COLLECTION_NAME,
             query=request.question,
@@ -438,7 +484,7 @@ def ask_question(request: AskRequest):
             text = point.payload.get("text", "")
             
             # LLM'e hangi bilginin nereden geldiğini net bildirmek için etiketliyoruz
-            context_parts.append(f"--- [Kaynak #{idx+1}: {source}, Sayfa: {page_number}] ---\n{text}\n")
+            context_parts.append(f"--- [Source #{idx+1}: {source}, Page: {page_number}] ---\n{text}\n")
             citations.append(
                 CitationItem(
                     source=source,
@@ -449,13 +495,15 @@ def ask_question(request: AskRequest):
             
         context_str = "\n".join(context_parts)
         
-        # 3. Adım: Hugging Face API'ye gönderilecek prompt'u hazırla
+        # 3. Adım: LLM Prompt'unu hazırla
         system_prompt = (
-            "Sana sunulan belge içeriklerine dayanarak aşağıdaki soruyu cevapla.\n"
-            "Cevabını sadece ve sadece verilen bağlam (context) bilgisine dayandır.\n"
-            "Eğer verilen bağlam soruyu cevaplamak için yetersiz veya alakasızsa, "
-            "kesinlikle kendi bilgilerini katma ve doğrudan 'Aranan bilgi indekslenmiş akademik belgelerde bulunamadı.' de.\n"
-            "Cevap verirken mutlaka bilgi aldığın kaynak adını ve sayfa numarasını belirt."
+            "You are Antispace, an expert space science research assistant.\n"
+            "Answer the user's question based strictly on the provided academic context snippets.\n"
+            "Provide a clear, detailed, grounded scientific answer using the information in the context.\n"
+            "Every fact or claim in your response MUST be cited inline using the exact format: (source_filename.pdf, Page: X).\n"
+            "Respond in the same language as the user's query.\n"
+            "If the context snippets do not contain sufficient evidence to answer the question, state: "
+            "'The retrieved index documents do not contain specific evidence regarding this question.'"
         )
 
         # 4. Adım: LLM API Çağrısı (Hybrid Fallback: Gemini -> OpenRouter)
@@ -677,6 +725,48 @@ def trigger_daily_ingestion(request: IngestRequest):
     except Exception as e:
         logger.error(f"Daily ingestion tetikleme hatası: {e}")
         raise HTTPException(status_code=500, detail=f"Otomatik veri besleme hatası: {str(e)}")
+
+
+@app.post("/api/v1/upload", response_model=UploadResponse)
+async def upload_pdf_file(file: UploadFile = File(...)):
+    """
+    Kullanıcıların kendi PDF akademik makalelerini sisteme yüklemesini, 
+    parçalamasını (chunking) ve Qdrant Cloud veritabanına anında vektörleştirmesini sağlar.
+    """
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Lütfen sadece .pdf uzantılı akademik belgeler yükleyin.")
+        
+    try:
+        data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
+        os.makedirs(data_dir, exist_ok=True)
+        file_path = os.path.join(data_dir, file.filename)
+        
+        logger.info(f"Yüklenen dosya kaydediliyor: {file_path}")
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+            
+        from ingest_pdfs import DocumetPipeline
+        from ingest_to_qdrant import bulk_upsert_chunks
+        
+        pipeline = DocumetPipeline(download_dir=data_dir)
+        raw_chunks = pipeline.extract_text_from_pdf(file_path)
+        
+        if not raw_chunks:
+            raise HTTPException(status_code=400, detail="PDF belgesinden metin çıkarılamadı.")
+            
+        logger.info(f"PDF'den {len(raw_chunks)} parça çıkarıldı, Qdrant'a yükleniyor...")
+        bulk_upsert_chunks(store, COLLECTION_NAME, raw_chunks, batch_size=32)
+        
+        return UploadResponse(
+            status="success",
+            filename=file.filename,
+            chunks_indexed=len(raw_chunks),
+            message=f"'{file.filename}' belgesi başarıyla yüklendi ve {len(raw_chunks)} parça Qdrant'a indekslendi."
+        )
+    except Exception as e:
+        logger.error(f"PDF yükleme ve vektörleştirme hatası: {e}")
+        raise HTTPException(status_code=500, detail=f"PDF yükleme hatası: {str(e)}")
 
 
 # Static klasörünü FastAPI'ye bağla

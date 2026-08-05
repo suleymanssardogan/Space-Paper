@@ -1,4 +1,10 @@
 import os
+
+# Disable TensorFlow/Keras 3 conflicts and tokenizers deadlock warnings
+os.environ["USE_TF"] = "0"
+os.environ["USE_TORCH"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 import time
 import logging
 from qdrant_client import QdrantClient
@@ -177,20 +183,23 @@ class SpaceScienceVectorStore:
                 )
 
             # 3. Qdrant üzerinde hibrid arama yapma (Prefetch ve RRF)
-            # score_threshold parametresini sadece dense prefetch adımına uyguluyoruz.
+            # Dense prefetch aşamasında çok katı bir eşik değeri uygulamak RRF (BM25) kelime eşleşmelerini engelleyebilir.
+            # Eşik değerini sadece son derecede yüksek (>0.50) durumlar hariç prefetch adımı için esnek tutuyoruz.
+            prefetch_dense_threshold = score_threshold if (score_threshold is not None and score_threshold > 0.50) else None
+
             results = self.client.query_points(
                 collection_name=collection_name,
                 prefetch=[
                     Prefetch(
                         query=query_vector,
                         using="",
-                        limit=limit * 2,
-                        score_threshold=score_threshold
+                        limit=limit * 4,
+                        score_threshold=prefetch_dense_threshold
                     ),
                     Prefetch(
                         query=sparse_q,
                         using="sparse-text",
-                        limit=limit * 2
+                        limit=limit * 4
                     )
                 ],
                 query=FusionQuery(fusion=Fusion.RRF),

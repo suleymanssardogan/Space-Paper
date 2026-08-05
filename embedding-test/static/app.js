@@ -27,19 +27,19 @@ async function loadSources() {
         if (!response.ok) throw new Error("Status: " + response.status);
         const sources = await response.json();
         
-        // Keep only the default "Tüm Kaynaklar (Filtresiz)" option
-        sourceSelect.innerHTML = '<option value="">Tüm Kaynaklar (Filtresiz)</option>';
-        
+        // Keep only the default "All Sources" option
+        sourceSelect.innerHTML = '<option value="">All Sources (Unfiltered)</option>';
+
         sources.forEach(src => {
             const opt = document.createElement('option');
             opt.value = src;
-            
+
             // Format display name nicely
             let displayName = src;
             if (src === 'jwst_performance.pdf') {
-                displayName = 'jwst_performance.pdf (JWST Performans)';
+                displayName = 'jwst_performance.pdf (JWST Performance)';
             } else if (src === 'kepler_mission.pdf') {
-                displayName = 'kepler_mission.pdf (Kepler Görevi)';
+                displayName = 'kepler_mission.pdf (Kepler Mission)';
             }
             
             opt.textContent = displayName;
@@ -70,9 +70,9 @@ function switchMode(mode) {
     // Toggle placeholder text
     const inputField = document.getElementById('query-input');
     if (mode === 'ask') {
-        inputField.placeholder = "Uzay bilimleriyle ilgili sorunuzu buraya yazın... (örn: What is Stephan's Quintet?)";
+        inputField.placeholder = "Ask a scientific research question... (e.g. What is Stephan's Quintet?)";
     } else {
-        inputField.placeholder = "Semantik arama için terimler yazın... (örn: James Webb Optical Performance)";
+        inputField.placeholder = "Enter search terms for semantic search... (e.g. James Webb optical performance)";
     }
     
     // Reset output views
@@ -80,10 +80,10 @@ function switchMode(mode) {
     document.getElementById('welcome-card').classList.remove('hidden');
 }
 
-// Set Query from Sample Chip
+// Set Query from Sample Card and immediately execute
 function setQuery(text) {
     document.getElementById('query-input').value = text;
-    document.getElementById('query-input').focus();
+    handleQuery();
 }
 
 // Run Diagnostics (health check)
@@ -102,24 +102,24 @@ async function runDiagnostics() {
         if (data.status === 'healthy') {
             if (data.llm_configured) {
                 healthBadge.className = 'health-badge status-healthy';
-                healthText.innerHTML = '<i class="fa-solid fa-circle-check"></i> Sistem Çevrimiçi';
+                healthText.innerHTML = '<i class="fa-solid fa-circle-check"></i> System Online';
             } else {
                 healthBadge.className = 'health-badge status-warning';
-                healthText.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Çevrimdışı Mod (Key Eksik)';
+                healthText.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Offline Mode (Missing Key)';
             }
         } else {
             healthBadge.className = 'health-badge status-unhealthy';
-            healthText.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> Veritabanı Bulunamadı';
+            healthText.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> Database Not Found';
         }
-        
+
         dbVectors.textContent = data.vector_count.toLocaleString();
-        dbLatency.textContent = data.latency_seconds.toFixed(3) + ' sn';
-        
+        dbLatency.textContent = data.latency_seconds.toFixed(3) + 's';
+
     } catch (error) {
         console.error("Diagnostics error:", error);
         healthBadge.className = 'health-badge status-unhealthy';
-        healthText.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Bağlantı Hatası';
-        dbVectors.textContent = 'Bağlanılamadı';
+        healthText.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Connection Error';
+        dbVectors.textContent = 'Unavailable';
         dbLatency.textContent = '-';
     }
 }
@@ -162,7 +162,7 @@ async function handleQuery(event) {
         }
     } catch (err) {
         console.error("Query Execution Error:", err);
-        showError(err.message || "Bilinmeyen sunucu hatası oluştu.");
+        showError(err.message || "An unknown server error occurred.");
     } finally {
         submitBtn.disabled = false;
         document.getElementById('loading-card').classList.add('hidden');
@@ -201,7 +201,7 @@ async function executeAskQuery(question, limit, scoreThreshold, source) {
     
     if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || `Sunucu hatası (Status Code: ${response.status})`);
+        throw new Error(errData.detail || `Server error (Status Code: ${response.status})`);
     }
     
     const data = await response.json();
@@ -214,11 +214,11 @@ async function executeAskQuery(question, limit, scoreThreshold, source) {
     // Update Prefilter Badge in Ask Mode
     const askPrefilterBadge = document.getElementById('ask-prefilter-badge');
     if (data.prefiltered_source) {
-        askPrefilterBadge.innerHTML = `<i class="fa-solid fa-filter"></i> Ön Filtreleme: Aktif (${data.prefiltered_source})`;
-        askPrefilterBadge.className = 'prefilter-badge active';
+        askPrefilterBadge.textContent = `Active (${data.prefiltered_source})`;
+        askPrefilterBadge.className = 'metric-val eval-good';
     } else {
-        askPrefilterBadge.innerHTML = `<i class="fa-solid fa-filter"></i> Ön Filtreleme: Pasif`;
-        askPrefilterBadge.className = 'prefilter-badge inactive';
+        askPrefilterBadge.textContent = `Passive`;
+        askPrefilterBadge.className = 'metric-val';
     }
     
     // Render Evaluation Scores
@@ -227,27 +227,26 @@ async function executeAskQuery(question, limit, scoreThreshold, source) {
     const evalRelevanceVal = document.getElementById('eval-relevance-val');
     const evalStatusBadge = document.getElementById('eval-status-badge');
     
-    // Always keep it visible (no 'hidden' class by default)
     evalScoresArea.classList.remove('hidden');
     
     if (data.faithfulness !== null && data.faithfulness !== undefined) {
         evalFaithfulnessVal.textContent = data.faithfulness.toFixed(2);
-        evalFaithfulnessVal.className = 'eval-score-val ' + getScoreClass(data.faithfulness);
+        evalFaithfulnessVal.className = 'metric-val ' + getScoreClass(data.faithfulness);
         
         evalRelevanceVal.textContent = data.answer_relevance.toFixed(2);
-        evalRelevanceVal.className = 'eval-score-val ' + getScoreClass(data.answer_relevance);
+        evalRelevanceVal.className = 'metric-val ' + getScoreClass(data.answer_relevance);
         
-        evalStatusBadge.textContent = "RAGAs: Aktif";
-        evalStatusBadge.className = "eval-status-badge status-active";
+        evalStatusBadge.textContent = "Active";
+        evalStatusBadge.className = "metric-val eval-good";
     } else {
         evalFaithfulnessVal.textContent = "N/A";
-        evalFaithfulnessVal.className = "eval-score-val eval-poor";
+        evalFaithfulnessVal.className = "metric-val eval-poor";
         
         evalRelevanceVal.textContent = "N/A";
-        evalRelevanceVal.className = "eval-score-val eval-poor";
+        evalRelevanceVal.className = "metric-val eval-poor";
         
-        evalStatusBadge.textContent = "RAGAs: Pasif (API Key Eksik)";
-        evalStatusBadge.className = "eval-status-badge status-passive";
+        evalStatusBadge.textContent = "Offline / Passive";
+        evalStatusBadge.className = "metric-val eval-poor";
     }
     
     // Render Citations
@@ -256,30 +255,23 @@ async function executeAskQuery(question, limit, scoreThreshold, source) {
     
     if (data.citations && data.citations.length > 0) {
         data.citations.forEach((cit, idx) => {
-            // Mock or find textual context for rendering inside tile.
-            // Since `/api/v1/ask` currently does not return chunk texts directly in `citations` response model 
-            // (it only returns metadata: source, page_number, score), we will load search results in parallel 
-            // or fetch them to enrich tiles with snippets! This is a super elegant premium touch.
-            // We can fetch from `/api/v1/search` with the same question/limits to align text chunks!
-            // Let's create an elegant fallback text if search snippet isn't resolved.
-            
             const tile = document.createElement('div');
-            tile.className = 'citation-tile glass-panel';
+            tile.className = 'citation-tile';
             tile.onclick = () => openCitationModal(cit.source, cit.page_number, cit.score, idx);
             
             tile.innerHTML = `
                 <div class="citation-header">
-                    <span class="citation-title-file">
-                        <i class="fa-solid fa-file-pdf" style="color: var(--accent-pink);"></i> Kaynak #${idx+1}
+                    <span>
+                        <i class="fa-solid fa-file-pdf" style="color: var(--accent-blue);"></i> ${cit.source}
                     </span>
-                    <span class="score-label">Skor: ${cit.score.toFixed(4)}</span>
+                    <span class="score-label">Score: ${cit.score.toFixed(4)}</span>
                 </div>
                 <div class="citation-body" id="cit-body-${idx}">
-                    Yükleniyor...
+                    Retrieving chunk snippet...
                 </div>
                 <div class="citation-footer">
-                    <span>${cit.source} (Sayfa ${cit.page_number})</span>
-                    <span class="click-hint"><i class="fa-solid fa-expand"></i> İncele</span>
+                    <span>Page ${cit.page_number}</span>
+                    <span class="click-hint"><i class="fa-solid fa-up-right-from-square"></i> Inspect</span>
                 </div>
             `;
             citationsContainer.appendChild(tile);
@@ -306,7 +298,7 @@ async function executeSearchQuery(query, limit, scoreThreshold, source) {
     
     if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || `Sunucu hatası (Status: ${response.status})`);
+        throw new Error(errData.detail || `Server error (Status: ${response.status})`);
     }
     
     const data = await response.json();
@@ -317,20 +309,20 @@ async function executeSearchQuery(query, limit, scoreThreshold, source) {
     
     // Update count in header
     const headerTitle = document.querySelector('#search-results-card h3');
-    headerTitle.innerHTML = `<i class="fa-solid fa-list-check"></i> Semantik Eşleşmeler (${searchResultsData.length})`;
-    
+    headerTitle.innerHTML = `<i class="fa-solid fa-list-check"></i> Semantic Vector Matches (${searchResultsData.length})`;
+
     document.getElementById('search-latency-badge').textContent = `Latency: ${data.latency_seconds.toFixed(3)}s`;
-    
+
     // Update Prefilter Badge in Search Mode
     const searchPrefilterBadge = document.getElementById('search-prefilter-badge');
     if (data.prefiltered_source) {
-        searchPrefilterBadge.innerHTML = `<i class="fa-solid fa-filter"></i> Ön Filtreleme: Aktif (${data.prefiltered_source})`;
+        searchPrefilterBadge.innerHTML = `<i class="fa-solid fa-filter"></i> Filter: Active (${data.prefiltered_source})`;
         searchPrefilterBadge.className = 'prefilter-badge active';
     } else {
-        searchPrefilterBadge.innerHTML = `<i class="fa-solid fa-filter"></i> Ön Filtreleme: Pasif`;
+        searchPrefilterBadge.innerHTML = `<i class="fa-solid fa-filter"></i> Filter: Passive`;
         searchPrefilterBadge.className = 'prefilter-badge inactive';
     }
-    
+
     if (searchResultsData.length > 0) {
         searchResultsData.forEach((res, idx) => {
             const item = document.createElement('div');
@@ -338,9 +330,9 @@ async function executeSearchQuery(query, limit, scoreThreshold, source) {
             item.innerHTML = `
                 <div class="search-result-header">
                     <span class="search-result-title">
-                        <i class="fa-solid fa-file-alt" style="color: var(--accent-blue);"></i> ${res.source} - Sayfa ${res.page_number}
+                        <i class="fa-solid fa-file-alt" style="color: var(--accent-blue);"></i> ${res.source} - Page ${res.page_number}
                     </span>
-                    <span class="search-result-score">Skor: ${res.score.toFixed(4)}</span>
+                    <span class="search-result-score">Score: ${res.score.toFixed(4)}</span>
                 </div>
                 <div class="search-result-body">
                     ${escapeHtml(res.text)}
@@ -352,7 +344,7 @@ async function executeSearchQuery(query, limit, scoreThreshold, source) {
         container.innerHTML = `
             <div style="text-align: center; padding: 2rem; color: var(--text-muted);">
                 <i class="fa-solid fa-ban" style="font-size: 2rem; margin-bottom: 0.5rem;"></i>
-                <p>Belirtilen benzerlik eşiğinde hiçbir eşleşen belge bulunamadı.</p>
+                <p>No matching documents found at the specified similarity threshold.</p>
             </div>
         `;
     }
@@ -383,7 +375,7 @@ async function fetchTextSnippetsForCitations(query, limit, scoreThreshold, sourc
             // Clean up any remaining loading indicators if we got fewer search results
             for (let i = searchResultsData.length; i < limit; i++) {
                 const el = document.getElementById(`cit-body-${i}`);
-                if (el) el.textContent = "Bağlam detay metni çözümlenemedi.";
+                if (el) el.textContent = "Context snippet could not be resolved.";
             }
         }
     } catch (e) {
@@ -396,10 +388,10 @@ function formatAnswer(text) {
     if (!text) return "";
     let formatted = escapeHtml(text);
     
-    // Parse references like (jwst_performance.pdf, Sayfa: 4)
+    // Parse references like (jwst_performance.pdf, Sayfa: 4) or (jwst_performance.pdf, Page: 4)
     const regex = /\(([^)]+\.pdf),\s*(Sayfa|Page):\s*(\d+)\)/gi;
     formatted = formatted.replace(regex, (match, file, lang, page) => {
-        return `<span class="badge" style="cursor: pointer; background: rgba(236, 72, 153, 0.12); color: var(--accent-pink); border-color: rgba(236, 72, 153, 0.2); font-size: 0.75rem;" onclick="findAndOpenCitation('${file}', ${page})">${file} [S: ${page}]</span>`;
+        return `<span class="badge citation-inline-pill" onclick="findAndOpenCitation('${file}', ${page})">[${file}, P. ${page}]</span>`;
     });
     
     // Also parse markdown-like bold text
@@ -423,13 +415,13 @@ function findAndOpenCitation(filename, page) {
 // Open modal dialog for a citation item
 function openCitationModal(source, pageNumber, score, cacheIdx) {
     const modal = document.getElementById('citation-modal');
-    document.getElementById('modal-source-title').innerHTML = `<i class="fa-solid fa-file-pdf"></i> ${source} - Sayfa ${pageNumber}`;
+    document.getElementById('modal-source-title').innerHTML = `<i class="fa-solid fa-file-pdf"></i> ${source} - Page ${pageNumber}`;
     
     const chunkTextEl = document.getElementById('modal-chunk-text');
     const scoreValEl = document.getElementById('modal-score');
     const charCountEl = document.getElementById('modal-char-count');
     
-    let text = "Kaynak belge metni bulunamadı.";
+    let text = "Source document text not found.";
     let charCount = 0;
     
     if (cacheIdx !== -1 && searchResultsData[cacheIdx]) {
@@ -446,7 +438,7 @@ function openCitationModal(source, pageNumber, score, cacheIdx) {
     }
     
     chunkTextEl.textContent = text;
-    scoreValEl.textContent = score > 0 ? score.toFixed(4) : "Belirtilmemiş";
+    scoreValEl.textContent = score > 0 ? score.toFixed(4) : "N/A";
     charCountEl.textContent = charCount;
     
     modal.classList.remove('hidden');
@@ -488,7 +480,7 @@ async function submitFeedback(score) {
             // Show a temporary visual indication
             const feedbackArea = document.querySelector('.feedback-area');
             if (feedbackArea) {
-                feedbackArea.innerHTML = `<span style="font-size: 0.75rem; color: var(--accent-green);"><i class="fa-solid fa-heart"></i> Geri bildiriminiz için teşekkürler!</span>`;
+                feedbackArea.innerHTML = `<span style="font-size: 0.75rem; color: var(--status-success-text);"><i class="fa-solid fa-heart"></i> Thanks for your feedback!</span>`;
             }
         }
     } catch (err) {
@@ -505,39 +497,100 @@ async function triggerArxivIngest() {
     
     ingestBtn.disabled = true;
     ingestStatus.style.display = 'block';
-    ingestStatus.textContent = 'Canlı arXiv API bağlanıyor, makaleler indiriliyor...';
-    
+    ingestStatus.textContent = 'Connecting to arXiv API, downloading papers...';
+
     try {
         const response = await fetch(`${API_BASE}/api/v1/ingest/daily`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ category: "astro-ph.CO+OR+cat:astro-ph.EP", max_results: 3 })
         });
-        
+
         if (!response.ok) {
             const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.detail || `Sunucu hatası (${response.status})`);
+            throw new Error(errData.detail || `Server error (${response.status})`);
         }
-        
+
         const data = await response.json();
-        ingestStatus.style.color = 'var(--accent-green)';
-        ingestStatus.innerHTML = `<i class="fa-solid fa-circle-check"></i> ${data.papers_ingested} yeni makale başarıyla eklendi!`;
-        
+        ingestStatus.style.color = 'var(--status-success-text)';
+        ingestStatus.innerHTML = `<i class="fa-solid fa-circle-check"></i> ${data.papers_ingested} new papers added successfully!`;
+
         // Refresh diagnostics and sources to update total vector count and dropdown
         setTimeout(() => {
             runDiagnostics();
             loadSources();
         }, 1500);
-        
+
     } catch (err) {
         console.error("Arxiv Ingestion error:", err);
-        ingestStatus.style.color = '#ef4444';
-        ingestStatus.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> Hata: ${err.message}`;
+        ingestStatus.style.color = 'var(--status-error-text)';
+        ingestStatus.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> Error: ${err.message}`;
     } finally {
         setTimeout(() => {
             ingestBtn.disabled = false;
             ingestStatus.style.display = 'none';
-            ingestStatus.style.color = 'var(--accent-pink)';
+            ingestStatus.style.color = '';
         }, 6000);
+    }
+}
+
+// Trigger PDF File Selection Dialog
+function triggerPdfUpload() {
+    const input = document.getElementById('pdf-upload-input');
+    if (input) input.click();
+}
+
+// Handle Custom PDF File Upload
+async function handleFileUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const toast = document.getElementById('upload-status-toast');
+    const toastIcon = document.getElementById('upload-status-icon');
+    const toastText = document.getElementById('upload-status-text');
+    
+    if (toast) {
+        toast.classList.remove('hidden');
+        toastIcon.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="color:var(--accent-blue);"></i>`;
+        toastText.textContent = `Indexing '${file.name}'...`;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/v1/upload`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.detail || `Upload failed (Status: ${response.status})`);
+        }
+        
+        const data = await response.json();
+        if (toast) {
+            toastIcon.innerHTML = `<i class="fa-solid fa-circle-check" style="color:var(--status-success-text);"></i>`;
+            toastText.textContent = `${data.filename}: ${data.chunks_indexed} chunks indexed!`;
+        }
+        
+        // Refresh sources dropdown and vector count stats
+        loadSources();
+        runDiagnostics();
+        
+    } catch (err) {
+        console.error("PDF upload error:", err);
+        if (toast) {
+            toastIcon.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:#ef4444;"></i>`;
+            toastText.textContent = `Upload error: ${err.message}`;
+        }
+    } finally {
+        event.target.value = '';
+        if (toast) {
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 5000);
+        }
     }
 }

@@ -1,4 +1,10 @@
 import os
+
+# Disable TensorFlow/Keras 3 conflicts and tokenizers deadlock warnings
+os.environ["USE_TF"] = "0"
+os.environ["USE_TORCH"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 import requests
 import logging
 import xml.etree.ElementTree as ET
