@@ -16,7 +16,7 @@ load_dotenv()
 import time
 import requests
 import logging
-from fastapi import FastAPI, HTTPException, File, UploadFile
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -131,12 +131,6 @@ class IngestRequest(BaseModel):
 class IngestResponse(BaseModel):
     status: str = Field(..., description="İşlem durumu (success / error)")
     papers_ingested: int = Field(..., description="Başarıyla Qdrant'a yüklenen makale sayısı")
-    message: str = Field(..., description="Detaylı durum mesajı")
-
-class UploadResponse(BaseModel):
-    status: str = Field(..., description="İşlem durumu (success / error)")
-    filename: str = Field(..., description="Yüklenen PDF dosyasının adı")
-    chunks_indexed: int = Field(..., description="Vektör veritabanına indekslenen parça sayısı")
     message: str = Field(..., description="Detaylı durum mesajı")
 
 # --- 2. API ENDPOINTS ---
@@ -725,48 +719,6 @@ def trigger_daily_ingestion(request: IngestRequest):
     except Exception as e:
         logger.error(f"Daily ingestion tetikleme hatası: {e}")
         raise HTTPException(status_code=500, detail=f"Otomatik veri besleme hatası: {str(e)}")
-
-
-@app.post("/api/v1/upload", response_model=UploadResponse)
-async def upload_pdf_file(file: UploadFile = File(...)):
-    """
-    Kullanıcıların kendi PDF akademik makalelerini sisteme yüklemesini, 
-    parçalamasını (chunking) ve Qdrant Cloud veritabanına anında vektörleştirmesini sağlar.
-    """
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Lütfen sadece .pdf uzantılı akademik belgeler yükleyin.")
-        
-    try:
-        data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
-        os.makedirs(data_dir, exist_ok=True)
-        file_path = os.path.join(data_dir, file.filename)
-        
-        logger.info(f"Yüklenen dosya kaydediliyor: {file_path}")
-        content = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(content)
-            
-        from ingest_pdfs import DocumetPipeline
-        from ingest_to_qdrant import bulk_upsert_chunks
-        
-        pipeline = DocumetPipeline(download_dir=data_dir)
-        raw_chunks = pipeline.extract_text_from_pdf(file_path)
-        
-        if not raw_chunks:
-            raise HTTPException(status_code=400, detail="PDF belgesinden metin çıkarılamadı.")
-            
-        logger.info(f"PDF'den {len(raw_chunks)} parça çıkarıldı, Qdrant'a yükleniyor...")
-        bulk_upsert_chunks(store, COLLECTION_NAME, raw_chunks, batch_size=32)
-        
-        return UploadResponse(
-            status="success",
-            filename=file.filename,
-            chunks_indexed=len(raw_chunks),
-            message=f"'{file.filename}' belgesi başarıyla yüklendi ve {len(raw_chunks)} parça Qdrant'a indekslendi."
-        )
-    except Exception as e:
-        logger.error(f"PDF yükleme ve vektörleştirme hatası: {e}")
-        raise HTTPException(status_code=500, detail=f"PDF yükleme hatası: {str(e)}")
 
 
 # Static klasörünü FastAPI'ye bağla

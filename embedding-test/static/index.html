@@ -33,21 +33,12 @@
                 </a>
                 <nav class="top-nav">
                     <a href="#" class="nav-link active">Search</a>
-                    <button class="nav-upload-btn" onclick="triggerPdfUpload()">
-                        <i class="fa-solid fa-file-arrow-up"></i> Upload PDF
-                    </button>
-                    <input type="file" id="pdf-upload-input" accept=".pdf" style="display:none;" onchange="handleFileUpload(event)">
                     <a href="https://github.com/suleymanssardogan/Space-Paper" target="_blank" class="nav-link">Documentation</a>
                     <a href="https://github.com/suleymanssardogan/Space-Paper" target="_blank" class="nav-link">GitHub</a>
                 </nav>
             </div>
-            
+
             <div class="header-right">
-                <!-- Upload Status Pill Notification -->
-                <div id="upload-status-toast" class="upload-toast hidden">
-                    <span id="upload-status-icon"><i class="fa-solid fa-spinner fa-spin"></i></span>
-                    <span id="upload-status-text">Uploading PDF...</span>
-                </div>
                 <div id="health-badge" class="health-badge status-loading">
                     <span class="pulse-dot"></span>
                     <span id="health-text">Connecting...</span>

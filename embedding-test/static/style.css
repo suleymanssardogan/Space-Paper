@@ -185,39 +185,6 @@ body {
     background-color: var(--bg-tertiary);
 }
 
-.nav-upload-btn {
-    background-color: var(--accent-blue-light);
-    color: var(--accent-blue);
-    border: 1px solid var(--accent-blue-border);
-    font-size: 0.82rem;
-    font-weight: 600;
-    padding: 5px 12px;
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    transition: all var(--transition-fast);
-}
-
-.nav-upload-btn:hover {
-    background-color: #DBEAFE;
-    color: var(--accent-blue-hover);
-}
-
-.upload-toast {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 12px;
-    border-radius: var(--radius-full);
-    font-size: 0.78rem;
-    font-weight: 500;
-    background-color: var(--bg-tertiary);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-}
-
 .header-right {
     display: flex;
     align-items: center;
