@@ -4,6 +4,8 @@
    ========================================================================== */
 
 :root {
+    color-scheme: light only;
+
     /* Color System */
     --bg-primary: #FFFFFF;
     --bg-secondary: #FAFAFA;
@@ -153,7 +155,7 @@ body {
     font-weight: 700;
     letter-spacing: -0.02em;
     line-height: 1.1;
-    color: var(--text-primary);
+    color: var(--accent-blue);
 }
 
 .logo-text span {
