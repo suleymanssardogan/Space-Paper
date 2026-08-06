@@ -2,7 +2,22 @@
 
 **Canlı Site:** https://space-paper.onrender.com
 
-Bu doküman, projeyi bir mülakatta anlatıyormuş gibi baştan sona, adım adım açıklamak için yazıldı. Amaç sadece "ne yaptım" değil, "neden böyle yaptım" ve "nerede zorlandım, nasıl çözdüm" sorularına da hazırlıklı olmak.
+Antispace, arXiv makaleleri, NASA raporları ve JWST dokümantasyonu üzerinde çalışan bir **RAG (Retrieval-Augmented Generation)** asistanı. FastAPI, Qdrant (hibrit dense+sparse arama), FastEmbed/ONNX, Cohere Rerank ve çok katmanlı Gemini/OpenRouter LLM fallback zinciri üzerine kurulu; cevaplarını **sadece** veritabanındaki kaynaklara dayandırıp her iddiayı sayfa numarasıyla referanslıyor.
+
+## 📖 Bu Doküman Nasıl Okunmalı?
+
+Bu README bir kurulum kılavuzu değil — **projeyi bir mülakatta baştan sona anlatıyormuş gibi** yazıldı. Amaç sadece "ne yaptım" sorusunu geçmek değil, "neden böyle yaptım", "alternatifleri neden elemedim" ve "nerede zorlandım, nasıl çözdüm" sorularına da hazırlıklı olmak. Mülakat öncesi tekrar ederken her bölüm, karşına çıkabilecek tipik bir soruya karşılık geliyor:
+
+| Bölüm | Karşılık geldiği mülakat sorusu |
+|---|---|
+| 1️⃣ Problem Neydi? | "Bu projeyi neden yaptın, hangi ihtiyaçtan doğdu?" |
+| 2️⃣ Sistem Baştan Sona Nasıl Çalışıyor? | "Mimariyi uçtan uca anlatır mısın?" |
+| 3️⃣ Kritik Teknik Kararlar ve Gerekçeleri | "Neden X değil de Y'yi seçtin?" |
+| 4️⃣ Karşılaştığım Zorluklar ve Nasıl Çözdüm | "En çok nerede zorlandın, nasıl aştın?" |
+| 5️⃣ Sonuçlar Nasıl Ölçülüyor? | "Başarıyı nasıl ölçtün, elinde kanıt var mı?" |
+| 6️⃣ Ne Eksik / Gelecekte Ne Yapardım | "Zamanın/kaynağın olsa neyi değiştirir, neyi eklerdin?" |
+
+Yani doküman yukarıdan aşağı okunduğunda, bir mülakatın doğal akışını (motivasyon → mimari → kararlar → zorluklar → sonuç → eleştiri) tekrar etmiş oluyorsun.
 
 ### Ekran Görüntüleri
 
