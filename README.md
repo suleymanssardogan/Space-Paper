@@ -4,6 +4,14 @@
 
 Bu doküman, projeyi bir mülakatta anlatıyormuş gibi baştan sona, adım adım açıklamak için yazıldı. Amaç sadece "ne yaptım" değil, "neden böyle yaptım" ve "nerede zorlandım, nasıl çözdüm" sorularına da hazırlıklı olmak.
 
+### Ekran Görüntüleri
+
+**Grounded Q&A — sayfa atıflı, sadece kaynağa dayalı cevap:**
+![Grounded Q&A cevabı](docs/screenshots/grounded-qa-answer.png)
+
+**Gelişmiş arama filtreleri — kaynak PDF seçimi, top-k ve benzerlik eşiği:**
+![Gelişmiş arama filtreleri](docs/screenshots/advanced-search-filters.png)
+
 ---
 
 ## 🎤 Tek Cümlelik Özet (Elevator Pitch)
