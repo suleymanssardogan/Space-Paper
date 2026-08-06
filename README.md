@@ -1,142 +1,179 @@
 # 🌌 Antispace: Uzay Bilimleri RAG Asistanı
 
-**Canlı Site Linki:** https://space-paper.onrender.com
+**Canlı Site:** https://space-paper.onrender.com
 
-**Antispace**, uzay bilimleri ve astrofizik literatürü için tasarlanmış yüksek performanslı, üretim kalitesinde (production-grade) bir Retrieval-Augmented Generation (RAG) asistanıdır. Akademik yayınları (arXiv makaleleri, NASA raporları ve JWST dokümantasyonları) günlük olarak otomatik çeker ve kullanıcılara halüsinasyonsuz, sayfa düzeyinde kaynak gösteren doğrulanmış yanıtlar sunar.
-
----
-
-## 🎯 1. Problemi Tanıma ve Çözüm (Problem & Solution)
-
-### Problem
-Uzay bilimleri ve astrofizik literatürü son derece geniş, teknik ve sürekli güncellenen bir yapıya sahiptir. Standart Büyük Dil Modelleri (LLM'ler) bu alanda araştırma yaparken şu kritik sorunlarla karşılaşır:
-1. **Bilgi Kesintisi (Knowledge Cutoff):** LLM'ler en son yayınlanan (örneğin dün çıkan bir arXiv makalesi) bilimsel gelişmelerden habersizdir.
-2. **Halüsinasyon (Uydurma Bilgi):** Teknik detaylar, karmaşık formüller ve sayısal veriler hakkında LLM'ler yanlış veya uydurma bilgiler üretebilir.
-3. **Doğrulanabilirlik Eksikliği:** LLM yanıtlarının hangi kaynağa, hangi makaleye veya makalenin hangi sayfasına dayandığı bilinemez.
-
-### Çözüm (Antispace)
-Antispace, bu problemleri çözmek için **RAG (Retrieval-Augmented Generation)** mimarisini kullanır:
-* **Güncel Veri:** Her sabah yeni makaleleri otomatik olarak veritabanına ekler.
-* **Sıfır Halüsinasyon Garantisi:** LLM'e sadece sistemin veritabanından bulup getirdiği makale parçalarını (bağlam) okuma ve bu bağlamın dışına çıkmama talimatı verilir.
-* **Sayfa Düzeyinde Referans:** Her cevap, bilginin alındığı makale adı ve tam sayfa numarası ile birlikte sunulur.
+Bu doküman, projeyi bir mülakatta anlatıyormuş gibi baştan sona, adım adım açıklamak için yazıldı. Amaç sadece "ne yaptım" değil, "neden böyle yaptım" ve "nerede zorlandım, nasıl çözdüm" sorularına da hazırlıklı olmak.
 
 ---
 
-## 🏗️ 2. Mimari Kurma ve Anlatma (Architecture Setup & Pipeline)
+## 🎤 Tek Cümlelik Özet (Elevator Pitch)
 
-Sistem mimarisi üç temel iş akışı üzerine kurulmuştur: **Veri Toplama (Ingestion)**, **Arama ve Yanıt Üretimi (RAG Query & Synthesis)** ve **İzlenebilirlik (Observability)**.
+> "Antispace, arXiv makaleleri, NASA raporları ve JWST dokümantasyonu üzerinde çalışan; cevaplarını **sadece** veritabanındaki kaynaklara dayandıran, her iddiayı sayfa numarasıyla kaynak gösteren, halüsinasyon riskini mimari seviyede minimize eden production-grade bir RAG (Retrieval-Augmented Generation) sistemi."
+
+---
+
+## 1️⃣ Problem Neydi?
+
+Uzay bilimleri / astrofizik literatüründe bir LLM'e doğrudan soru sormanın üç somut riski var:
+
+1. **Bilgi kesintisi:** Model, dün yayınlanan bir arXiv makalesinden habersiz.
+2. **Halüsinasyon:** Sayısal veriler, formüller, misyon detayları gibi teknik konularda model kendinden emin ama yanlış cevaplar üretebiliyor.
+3. **Doğrulanamazlık:** Cevabın hangi makaleye, hangi sayfaya dayandığı bilinmiyor — akademik/teknik bir bağlamda bu kabul edilemez.
+
+Bunu şöyle özetliyorum: **"Model bilgiyi hatırlamaya değil, doğru yerden bulup okumaya zorlanmalı."** RAG mimarisini seçmemin temel gerekçesi bu.
+
+---
+
+## 2️⃣ Sistem Baştan Sona Nasıl Çalışıyor (Adım Adım)
+
+Sistemi iki ana hat üzerinden anlatıyorum: **veri toplama (ingestion)** ve **sorgu/cevap üretimi (query pipeline)**.
 
 ```mermaid
 flowchart TD
-    subgraph Ingestion_Pipeline [1. Veri Toplama Hattı / Data Ingestion]
+    subgraph Ingestion [1. Veri Toplama Hattı]
         direction TB
-        Cron[GitHub Actions Daily Cron / 05:00 UTC] -->|1. Scrape| Scrap[arXiv API Scraper]
-        Scrap -->|2. Download| PDF[PyPDF Document Loader]
-        PDF -->|3. Segment| Split[RecursiveCharacterTextSplitter]
-        Split -->|4. Embed| FE[FastEmbed Dense & Sparse / ONNX]
-        FE -->|5. Hash| UUID[Deterministic UUID5 Generator]
-        UUID -->|6. Load| QC[(Qdrant Cloud DB)]
+        Cron[GitHub Actions Cron / 05:00 TR] -->|arXiv API| Scrap[Yeni Makaleleri Bul]
+        Scrap -->|PDF indir| PDF[PyPDF ile Metin Çıkar]
+        PDF -->|800 karakter / 150 overlap| Split[RecursiveCharacterTextSplitter]
+        Split -->|Dense + Sparse| FE[FastEmbed / ONNX Embedding]
+        FE -->|UUID5 hash| UUID[Deterministik ID Üretimi]
+        UUID -->|Upsert| QC[(Qdrant Cloud)]
     end
 
-    subgraph Query_Pipeline [2. Arama ve Yanıt Üretim Hattı / RAG Query]
+    subgraph Query [2. Sorgu ve Cevap Üretim Hattı]
         direction TB
-        User([Kullanıcı Sorusu]) -->|1. Gönder| Web[Dashboard UI]
-        Web -->|2. Filtrele & Sor| API[FastAPI Gateway]
-        API -->|3. Vektörleştir| FE_Q[FastEmbed Dense & Sparse]
-        FE_Q -->|4. Hibrit Arama & RRF| QC
-        QC -->|5. En Yakın 9 Parçayı Getir| Rerank{Reranker Pipeline}
-        
-        Rerank -->|Seçenek A| Cohere[Cohere Rerank API]
-        Rerank -->|Seçenek B / Fallback| CE[Local Cross-Encoder]
-        
-        Cohere -->|En İyi 3 Parçayı Filtrele| Prompt[Strict Grounding Prompt]
-        CE -->|En İyi 3 Parçayı Filtrele| Prompt
-        
-        Prompt -->|Bağlam Oluştur| LLM{Hybrid LLM Motoru}
-        LLM -->|Birincil| Gemini[Gemini 2.5 Flash]
-        LLM -->|İkincil Fallback| OR[OpenRouter API]
-        LLM -->|Çevrimdışı Fallback| Offline[Yerel Bağlam Yanıtı]
-        
-        Gemini -->|Referanslı Cevap Dök| Res[Dashboard UI]
-        OR -->|Referanslı Cevap Dök| Res
-        Offline -->|Ham Metin Parçalarını Dök| Res
+        User([Kullanıcı Sorusu]) --> API[FastAPI Gateway]
+        API -->|Dense + Sparse vektörleştir| FE_Q[FastEmbed]
+        FE_Q -->|Prefetch x2 + RRF Fusion| QC
+        QC -->|İlk ~15-20 aday| Rerank{Rerank}
+        Rerank -->|Öncelik| Cohere[Cohere Rerank API]
+        Rerank -->|Fallback| CE[Yerel ONNX Cross-Encoder]
+        Cohere --> Prompt[Strict Grounding Prompt]
+        CE --> Prompt
+        Prompt --> LLM{LLM}
+        LLM -->|1. Öncelik| Gemini[Gemini 2.5 Flash]
+        LLM -->|2. Fallback| OR[OpenRouter Ücretsiz Modeller]
+        LLM -->|3. Fallback| Offline[Ham Kaynak Metinleri]
+        Gemini --> Eval[LLM-as-Judge: Faithfulness + Relevance]
+        Eval --> Res[Kaynak Atıflı Cevap]
     end
-
-    subgraph Observability_Pipeline [3. İzlenebilirlik ve Geri Bildirim Loop]
-        direction TB
-        Res -->|Puan Gönder| Feed[POST /api/v1/feedback]
-        Feed -->|Telemetri & Geri Bildirim| LF[(Langfuse Observability)]
-        API -->|Asenkron Log Akışı| LF
-    end
-    
-    %% Caching
-    Cache[(GitHub Cache)] -.->|Model Caching| FE
 ```
 
-### Teknik İş Akışı Detayları:
-1. **Otomatik İndeksleme:** Günlük tetiklenen GitHub Actions akışı ile arXiv üzerindeki kozmoloji ve astrofizik makaleleri taranır, `PyPDF` ile okunur, `RecursiveCharacterTextSplitter` ile 800 karakterlik parçalara bölünür. ONNX formatındaki **FastEmbed** kütüphanesi kullanılarak hem **Dense** (`all-MiniLM-L6-v2`) hem de **Sparse** (`Qdrant/bm25`) vektörleri üretilir ve **Qdrant Cloud**'a yüklenir.
-2. **Idempotency (UUID5):** Çift kayıtları önlemek için her metin parçasının deterministik UUID5 karması (hash) oluşturulur.
-3. **Hibrit Arama (Dense + Sparse) ve RRF:** Kullanıcı sorgusu hem dense hem de sparse (BM25) olarak vektörleştirilir. Qdrant'ın `query_points` API'si ve **RRF (Reciprocal Rank Fusion)** algoritması kullanılarak iki arama sonucundan en alakalı adaylar birleştirilir.
-4. **Ön-Filtreleme (Pre-filtering):** Kullanıcı arayüzden belirli bir kaynak makale seçtiğinde, Qdrant üzerinde `source` alanı için tanımlı `keyword` indeksi kullanılarak ön-filtreleme uygulanır ve arama alanı daraltılır.
-5. **Akıllı Sıralama (Reranking):** Qdrant'tan gelen ilk 9 aday, **Cohere Rerank** (veya hata durumunda yerel **Cross-Encoder**) ile tekrar sıralanarak en alakalı 3 parçaya düşürülür.
-6. **Çoklu LLM Desteği:** Birincil model olarak **Gemini 2.5 Flash** kullanılır. API limitleri veya kesintilerde **OpenRouter** üzerinden yedek modellere, internet yoksa doğrudan ham arama sonuçlarına (Offline Mode) düşüş (fallback) sağlanır.
+### Adım 1 — Veri Toplama: Her sabah kendi kendine güncellenen bir veritabanı
+
+Her gün TR saatiyle 05:00'te (UTC 02:00) bir **GitHub Actions cron job** tetikleniyor (`.github/workflows/daily_ingest.yml`). Bu job arXiv API'sini sorgulayıp `astro-ph.CO` ve `astro-ph.EP` kategorilerindeki en yeni makaleleri buluyor, PDF'lerini indirip metne çeviriyor.
+
+*Neden GitHub Actions?* Ayrı bir sunucu/worker maliyetine girmeden, versiyon kontrolüyle birlikte yaşayan, ücretsiz ve izlenebilir bir cron altyapısı sağlıyor.
+
+### Adım 2 — Chunking: Metni modele "sindirilebilir" parçalara bölmek
+
+`RecursiveCharacterTextSplitter` ile her PDF **800 karakterlik, 150 karakter overlap'li** parçalara bölünüyor. Overlap, bir cümlenin/argümanın parça sınırında ikiye bölünüp anlamını kaybetmesini önlüyor.
+
+### Adım 3 — Embedding: Hem "anlamı" hem "kelimeyi" yakalamak (Dense + Sparse)
+
+Her parça için iki farklı vektör üretiliyor:
+- **Dense vektör** (`all-MiniLM-L6-v2`, 384 boyut): semantik/anlamsal benzerlik için.
+- **Sparse vektör** (`Qdrant/bm25`): tam kelime eşleşmesi (ör. "Stephan's Quintet" gibi özel isimler, kısaltmalar) için.
+
+*Neden ikisi birden?* Dense arama parafrazları yakalamakta iyi ama nadir geçen özel terimlerde (misyon adları, enstrüman kodları) zayıf kalabiliyor. Sparse (BM25) tam tersi. İkisini birleştirmek tek başına hiçbirinin veremeyeceği bir kapsama alanı sağlıyor.
+
+Embedding modelleri **FastEmbed** (ONNX runtime) ile çalıştırılıyor — PyTorch'a göre çok daha düşük bellek ayak izi, bu da Render'ın ücretsiz/düşük katmanındaki 512MB-1GB RAM sınırında hayati önem taşıyordu (aşağıda "zorluklar" bölümünde detaylandırıyorum).
+
+### Adım 4 — Idempotent Yükleme: Aynı veriyi iki kere işlememek
+
+Her chunk'ın metninden **deterministik bir UUID5** üretiliyor (`uuid.uuid5(NAMESPACE_DNS, chunk_text)`). Böylece aynı makale ya da chunk ikinci kez işlense bile Qdrant'ta duplicate kayıt oluşmuyor — upsert doğal olarak "varsa güncelle, yoksa ekle" davranışı gösteriyor. Günlük cron'un sürekli çalıştığı bir sistemde bu, veri bütünlüğü için kritik.
+
+### Adım 5 — Sorgu Zamanı: Hibrit Arama + RRF Füzyonu
+
+Kullanıcı soru sorduğunda, aynı dense+sparse vektörleştirme sorguya da uygulanıyor. Qdrant'ın `query_points` API'sinde **iki paralel prefetch** çalıştırılıyor (dense top-N, sparse top-N) ve sonuçlar **RRF (Reciprocal Rank Fusion)** ile tek bir sıralı listede birleştiriliyor. Kullanıcı arayüzden belirli bir PDF seçtiyse, bu adımda `source` alanına göre **pre-filtering** de uygulanıyor (aramayı o dokümanla sınırlıyor).
+
+### Adım 6 — Reranking: İlk sıradaki sonuçların gerçekten en alakalı olduğundan emin olmak
+
+Hibrit aramadan gelen ilk ~15-20 aday, ikinci bir modelle yeniden puanlanıyor:
+- **Öncelik:** Cohere Rerank API (`rerank-english-v3.0`) — daha güçlü, cloud tabanlı.
+- **Fallback:** Cohere anahtarı yoksa veya API hata verirse, yerel bir **ONNX Cross-Encoder** (`Xenova/ms-marco-MiniLM-L-6-v2`) devreye giriyor.
+
+*Neden ayrı bir rerank adımı?* İlk aşamadaki vektör araması hız için optimize; rerank ise doğruluk için — sorgu ve dokümanı birlikte (cross-attention) değerlendirdiği için çok daha isabetli ama daha yavaş. Bu yüzden önce ucuz/hızlı yöntemle adayları daraltıp, pahalı/yavaş yöntemi sadece o küçük kümeye uyguluyorum.
+
+### Adım 7 — Cevap Üretimi: "Sadece bağlamdan oku" prensibi
+
+Seçilen en iyi 3 parça, kaynak dosya adı ve sayfa numarasıyla etiketlenip LLM'e "strict grounding" bir sistem promptuyla veriliyor. Prompt açıkça şunu talep ediyor:
+- Her iddia `(kaynak.pdf, Page: X)` formatında **inline** kaynak göstermeli.
+- Bağlamda yeterli kanıt yoksa model **açıkça "bulunamadı" demeli**, uydurmamalı.
+
+LLM tarafında **3 katmanlı fallback** var: **Gemini 2.5 Flash** (birincil, retry + exponential backoff ile) → başarısız olursa **OpenRouter** üzerinden ücretsiz modeller (Gemma, Qwen, Llama sırayla denenir) → o da yoksa **çevrimdışı mod** (ham, en alakalı kaynak metinleri doğrudan kullanıcıya gösterilir, hiç "uydurma" riski alınmaz).
+
+*Neden tek bir LLM'e bağımlı kalmadım?* Ücretsiz/tek API kotalarına bağlı bir sistemde tek sağlayıcı = tek arıza noktası. Kademeli fallback, servis kesintisinde bile kullanıcıya boş ekran değil, en azından ham kaynak veriyi gösterebiliyor.
+
+### Adım 8 — Kendi Kendini Denetleme: Runtime RAGAs Değerlendirmesi
+
+Her cevap üretildikten sonra, **Gemini'yi bir "hakem" (LLM-as-a-judge) olarak** ikinci kez çağırıyorum: üretilen cevaptaki her iddianın bağlamda gerçekten var olup olmadığını (**Faithfulness**) ve cevabın soruyu ne kadar tam karşıladığını (**Answer Relevance**) 0-1 arası puanlıyor. Bu skorlar statik/sahte değil, her istekte anlık hesaplanıyor ve kullanıcıya gösteriliyor.
+
+### Adım 9 — İzlenebilirlik: Langfuse + Kullanıcı Geri Bildirimi
+
+Her sorgunun vektör arama süresi, rerank süresi, LLM çağrı süresi ve token kullanımı **Langfuse**'a asenkron olarak gönderiliyor. Kullanıcının beğen/beğenme butonları da aynı trace'e bağlanıyor — böylece "hangi tür sorularda sistem kötü cevap veriyor" sorusu geriye dönük analiz edilebiliyor.
 
 ---
 
-## 📈 3. Çıktılar Nedir ve Nasıl Monitörlüyorsun Sistemi? (Outputs & Monitoring)
+## 3️⃣ Kritik Teknik Kararlar ve Gerekçeleri
 
-### Sistem Çıktıları (Outputs)
-* **Kullanıcı Yanıtı:** Kullanıcıya sunulan, doğrudan veritabanındaki makalelere dayanan, halüsinasyon içermeyen teknik cevaplar.
-* **Kaynak ve Sayfa Numaraları:** Cevapta yer alan iddiaların hangi belgeden ve hangi sayfadan alındığını gösteren referanslar (Örn: `[Kepler-Mission.pdf, Page 12]`).
-* **Çalışma Zamanı RAGAs Metrikleri (Dinamik):** Her RAG yanıtı için Gemini API yardımıyla çalışma zamanında hesaplanan **Faithfulness** (Güvenilirlik) ve **Answer Relevance** (Cevap Uygunluğu) skorları (0.0 - 1.0 arası). Bu skorlar statik veya hard-coded değildir, LLM-as-a-judge prensibiyle anlık üretilir.
+Mülakatta "neden X değil de Y?" sorularına hazır olmak için:
 
-### Sistem Monitörleme (Observability & Monitoring)
-Sistemin performansı ve kalitesi iki temel sütun üzerinden izlenir:
-1. **Langfuse ile Uçtan Uca İzleme (Tracing):**
-   * Kullanıcının sorduğu sorudan başlayarak vektör arama süresi, rerank süresi, LLM çağrı süresi ve harcanan token miktarı gibi tüm metrikler asenkron olarak **Langfuse** paneline aktarılır.
-   * Hangi aşamada gecikme yaşandığı (bottleneck) veya hangi API'nin hata verdiği görsel olarak izlenebilir.
-2. **Kullanıcı Geri Bildirim Döngüsü (Feedback Loop):**
-   * Arayüzdeki beğenme/beğenmeme (thumbs up/down) butonları aracılığıyla toplanan kullanıcı geri bildirimleri, doğrudan ilgili sorgunun Langfuse üzerindeki izleme kaydına (trace) bağlanır. Bu sayede kalitesiz cevap üreten sorgular kolayca tespit edilip optimize edilebilir.
-3. **Çalışma Zamanı Değerlendirmesi (Runtime Evaluation - RAGAs):**
-   * **Dinamik Değerlendirme:** Sunucuda geçerli bir `GEMINI_API_KEY` tanımlıysa, Gemini 2.5 Flash modeli JSON modunda çalıştırılarak LLM-as-a-judge yöntemiyle üretilen her yanıt için anlık güvenilirlik ve alaka testleri yapılır.
-   * **Koşullu Çalışma:** Eğer API anahtarı tanımlı değilse, arama ve cevaplama fonksiyonu kesintiye uğramadan çalışmaya devam eder; sadece değerlendirme skorları `N/A` (Null) döner ve UI üzerinde "RAGAs: Pasif (API Key Eksik)" uyarısı gösterilir.
-   * **Langfuse Entegrasyonu:** Üretilen dinamik skorlar, Langfuse aktifse asenkron olarak Langfuse sistemine gönderilerek panelde görselleştirilir.
+| Karar | Alternatif | Neden bu seçim |
+|---|---|---|
+| Qdrant | Pinecone, Weaviate | Hem dense hem native sparse vektör + RRF fusion'ı tek sorguda destekliyor, self-host/cloud esnekliği var |
+| FastEmbed (ONNX) | sentence-transformers (PyTorch) | Çok daha düşük RAM/CPU ayak izi — Render'ın kısıtlı belleğinde stabil çalışmak için zorunluydu |
+| Hibrit arama (Dense+Sparse+RRF) | Sadece dense | Özel isim/kısaltma ağırlıklı akademik literatürde tek başına dense arama kelime eşleşmelerini kaçırıyor |
+| İki aşamalı rerank (Cohere→local) | Tek sağlayıcı | Kota/kesinti durumunda sistemin tamamen durmaması |
+| Çoklu LLM fallback | Tek LLM | Ücretsiz kota/rate-limit riskine karşı sürekli çalışırlık |
+| UUID5 ile idempotent upsert | Auto-increment ID | Günlük cron aynı veriyi tekrar işlese bile duplicate oluşmasın diye |
 
 ---
 
-## 🚀 4. Daha İyi Nasıl Yapılabilir, Gelecekte Geliştirilebilecek Yerler (Future Roadmap)
+## 4️⃣ Karşılaştığım Zorluklar ve Nasıl Çözdüm
 
-### 🛠️ Gelecek Yol Haritası (Future Roadmap)
-1. **Multimodal (Çoklu Modlu) RAG Yapısı:**
-   * **Mevcut Durum:** Makalelerdeki grafikler, tablolar ve görsel veriler şu an sadece metin parçaları olarak okunmaktadır.
-   * **Geliştirme:** PDF sayfaları görsel olarak da analiz edilip Gemini'nin görsel anlama yeteneğiyle multimodal RAG kurgusu kurulabilir. Tablolar ve grafikler vektör veritabanına görsel-vektör olarak eklenebilir.
-2. **Ajan Tabanlı Kendi Kendini Düzeltme (Agentic Self-Correction Loop):**
-   * **Mevcut Durum:** Yanıt üretilir ve sadakat skoru düşük çıksa bile kullanıcıya gösterilir.
-   * **Geliştirme:** Eğer üretilen yanıtın *Faithfulness* skoru belirli bir eşiğin altındaysa, sistem yanıtı kullanıcıya vermeden önce aramayı genişletip (Query Expansion) veya farklı parçaları çekip cevabı otomatik olarak düzeltecek bir ajan akışına dönüştürülebilir.
-3. **Semantik Parçalama (Semantic Chunking):**
-   * **Mevcut Durum:** Metinler sabit karakter sayılarına göre bölünmektedir.
-   * **Geliştirme:** Metnin anlamsal akışına göre (paragraf geçişleri, konu değişimleri) akıllı semantik parçalama yapılarak bağlam bütünlüğü en üst seviyeye çıkarılabilir.
+Bunlar somut, anlatılabilir hikayeler:
 
-### 🌟 Son Yapılan Geliştirmeler (Recent Features)
-* **Hibrit Arama (Dense + Sparse Search):** Qdrant'ın Sparse Vector desteği ve BM25 entegrasyonu (`Qdrant/bm25`) başarıyla sisteme entegre edildi. Dense arama (`all-MiniLM-L6-v2`) ve Sparse arama sonuçları RRF (Reciprocal Rank Fusion) ile birleştirilerek hibrit arama aktif hale getirildi.
-* **Kaynak Ön-Filtreleme (Pre-filtering):** Kullanıcıların aramayı ve RAG cevaplarını belirli bir kaynak doküman (PDF) ile sınırlandırabilmesi sağlandı. `source` alanı için Qdrant üzerinde keyword indeksi oluşturuldu.
-* **Dinamik RAGAs Değerlendirmesi:** Gemini 2.5 Flash kullanılarak her RAG sorgusu için gerçek zamanlı Faithfulness ve Answer Relevance skorlaması ve bu skorların Langfuse'a aktarımı sağlandı.
-* **Gelişmiş Arayüz Göstergeleri:** Kullanıcı paneline RAGAs değerlendirme durumu (Aktif / API Key Eksik) ve Ön-filtreleme durum rozetleri eklendi.
-* **Hafıza ve Performans Optimizasyonları:** FastEmbed modellerinin `threads=1` ile çalıştırılması, Docker konteynerında izin yönetimi ve Render üzerinde aşırı bellek tüketiminin (out-of-memory) önüne geçilmesi için ONNX reranker optimizasyonları tamamlandı.
+**a) Render'da bellek yetersizliği (Out-of-Memory)**
+Embedding ve reranker modellerini varsayılan ayarlarla çalıştırdığımda, düşük RAM'li instance'ta konteyner OOM (out-of-memory) hatasıyla çöküyordu. Çözüm: FastEmbed modellerini `threads=1` ile sınırlamak (paralel thread'lerin bellek/CPU patlamasını önlemek) ve ONNX tabanlı reranker'a geçmek. Ayrıca ingestion sonrası `gc.collect()` ile belleği anında serbest bırakıyorum.
+
+**b) Deploy sonrası eski arayüzün önbellekten gelmesi**
+UI'yi (Türkçe/koyu temadan İngilizce/açık temaya) yeniden tasarladıktan sonra bazı kullanıcılar hâlâ eski sürümü görüyordu. Kök neden: statik dosyalar (`index.html`, `style.css`, `app.js`) için `Cache-Control` header'ı yeterince katı değildi (`no-cache` revalidation gerektiriyor ama önceki deploy'larda hiç cache header'ı yokken önbelleğe alınmış eski kopyalar buna tabi değildi). Çözümü `no-store, no-cache, must-revalidate` + `Pragma`/`Expires` header'larına genişleterek, tarayıcının bu dosyaları **hiç önbelleğe almadan** her seferinde sunucudan taze çekmesini sağladım (`embedding-test/api.py`).
+
+**c) Halüsinasyonu mimari seviyede engellemek**
+Sadece "uydurma" demek yetmiyor — prompt'ta modele bağlam yetersizse **açıkça refuze etmesi** talimatı verildi, ve değerlendirme katmanında bir refusal cevabı otomatik olarak Faithfulness=0 alacak şekilde puanlanıyor. Yani sistem "kaçamak" cevapları da ölçülebilir kılıyor, sessizce görmezden gelmiyor.
+
+**d) Hız (latency) ile doğruluk arasındaki denge**
+Rerank adımı doğruluğu artırıyor ama gecikme ekliyor. Bunu, vektör aramada geniş bir aday havuzu (limit×4-5) çekip, sadece bu havuza pahalı rerank uygulayarak; nihai LLM'e ise sadece en iyi 3 parçayı göndererek dengelemeye çalıştım.
 
 ---
 
-## ⚙️ 5. Teknik Detaylar ve Hızlı Başlangıç (Technical Details & Quick Start)
+## 5️⃣ Sonuçlar Nasıl Ölçülüyor?
 
-### API Referansı
-* `GET /api/v1/health` - Sağlık durumu ve veritabanı bağlantı kontrolü.
-* `POST /api/v1/search` - Ham semantik arama (kaynak filtreleme destekli).
-* `POST /api/v1/ask` - Uçtan uca RAG sorgusu (kaynak filtreleme, kaynak atıfları ve çalışma zamanı Ragas değerlendirme skorlarını döner).
-* `POST /api/v1/feedback` - Kullanıcı geri bildirim kaydı.
-* `POST /api/v1/ingest/daily` - Yeni arXiv makalelerini çekmek için manuel tetikleyici.
+- **Faithfulness / Answer Relevance:** Her sorguda gerçek zamanlı, LLM-as-judge ile üretilen skorlar (statik değil).
+- **Kaynak atıfları:** Her cevap `[dosya.pdf, Sayfa: X]` formatında doğrulanabilir referanslarla geliyor.
+- **Langfuse trace'leri:** Bottleneck analizi (arama mı, rerank mi, LLM mi yavaş) ve kullanıcı geri bildirimiyle çapraz doğrulama.
 
-### Çevre Değişkenleri
-Projenin kök dizininde bir `.env` dosyası oluşturun:
+---
+
+## 6️⃣ Ne Eksik / Gelecekte Ne Yapardım
+
+1. **Multimodal RAG:** Şu an grafik/tablo gibi görsel veriler sadece metin olarak okunuyor; JWST/Kepler makalelerindeki şekilleri de Gemini'nin görsel anlama yeteneğiyle vektörleştirmek isterdim.
+2. **Agentic self-correction:** Faithfulness skoru düşük çıkan cevaplarda, kullanıcıya göstermeden önce sistemin otomatik olarak aramayı genişletip (query expansion) yanıtı düzeltmesi.
+3. **Semantik chunking:** Şu an sabit karakter sayısına göre bölüyorum; paragraf/konu geçişlerine duyarlı semantik bölme, bağlam bütünlüğünü artırırdı.
+
+---
+
+## ⚙️ Teknik Referans (Hızlı Başlangıç)
+
+### API Uç Noktaları
+- `GET /api/v1/health` — Sağlık durumu ve veritabanı bağlantı kontrolü.
+- `POST /api/v1/search` — Ham semantik/hibrit arama (kaynak filtreleme destekli).
+- `POST /api/v1/ask` — Uçtan uca RAG sorgusu (kaynak atıfları + runtime RAGAs skorları döner).
+- `POST /api/v1/feedback` — Kullanıcı geri bildirim kaydı.
+- `POST /api/v1/ingest/daily` — Yeni arXiv makalelerini çekmek için manuel tetikleyici.
+
+### Çevre Değişkenleri (`.env`)
 ```env
 QDRANT_URL=https://your-qdrant-cluster.io
 QDRANT_API_KEY=your_qdrant_api_key
@@ -150,7 +187,7 @@ LANGFUSE_SECRET_KEY=your_secret_key (isteğe bağlı)
 ```bash
 docker compose up --build
 ```
-Uygulama arayüzüne `http://localhost:8000` adresinden erişebilirsiniz.
+Uygulama arayüzüne `http://localhost:8000` adresinden erişilebilir.
 
 ### Manuel Veri Yükleme ve Değerlendirme
 ```bash

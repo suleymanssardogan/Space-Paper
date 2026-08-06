@@ -231,7 +231,14 @@ def read_root():
             content="<h2>Antispace Dashboard Yükleniyor...</h2><p>Lütfen statik dosyaların hazırlandığından emin olun.</p>",
             status_code=404
         )
-    return FileResponse(html_path, headers={"Cache-Control": "no-cache"})
+    return FileResponse(
+        html_path,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 @app.get("/api/v1/health", response_model=HealthResponse)
 def health_check():
@@ -722,12 +729,15 @@ def trigger_daily_ingestion(request: IngestRequest):
 
 
 # Static klasörünü FastAPI'ye bağla
-# Cache-Control: no-cache zorunlu kılınır ki tarayıcılar her seferinde ETag ile
-# sunucudan doğrulama yapsın; aksi halde deploy sonrası eski CSS/JS önbellekten sunulabiliyor.
+# Cache-Control: no-store zorunlu kılınır ki tarayıcılar önbellekten hiç sunmadan
+# her seferinde sunucudan taze CSS/JS/HTML çeksin; aksi halde deploy sonrası
+# eski varlıklar (özellikle tema/tasarım değişikliklerinde) önbellekten sunulabiliyor.
 class NoCacheStaticFiles(StaticFiles):
     def file_response(self, *args, **kwargs):
         response = super().file_response(*args, **kwargs)
-        response.headers["Cache-Control"] = "no-cache"
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
         return response
 
 static_dir = os.path.join(os.path.dirname(__file__), "static")
