@@ -104,7 +104,7 @@ Embedding modelleri **FastEmbed** (ONNX runtime) ile çalıştırılıyor — Py
 
 ### Adım 4 — Idempotent Yükleme: Aynı veriyi iki kere işlememek
 
-Her chunk'ın metninden **deterministik bir UUID5** üretiliyor (`uuid.uuid5(NAMESPACE_DNS, chunk_text)`). Böylece aynı makale ya da chunk ikinci kez işlense bile Qdrant'ta duplicate kayıt oluşmuyor — upsert doğal olarak "varsa güncelle, yoksa ekle" davranışı gösteriyor. Günlük cron'un sürekli çalıştığı bir sistemde bu, veri bütünlüğü için kritik.
+Her chunk için kaynak dosya adı, sayfa numarası, chunk sırası ve metninden **deterministik bir UUID5** üretiliyor. Böylece farklı kaynaklardaki aynı metinler birbirinin atıf bilgisini ezmiyor. Böylece aynı makale ya da chunk ikinci kez işlense bile Qdrant'ta duplicate kayıt oluşmuyor — upsert doğal olarak "varsa güncelle, yoksa ekle" davranışı gösteriyor. Günlük cron'un sürekli çalıştığı bir sistemde bu, veri bütünlüğü için kritik.
 
 ### Adım 5 — Sorgu Zamanı: Hibrit Arama + RRF Füzyonu
 
@@ -223,3 +223,14 @@ python embedding-test/ingest_daily_arxiv.py
 # RAG performans değerlendirme testini çalıştırmak için
 python embedding-test/evaluate_rag.py
 ```
+
+### Regresyon kontrolleri
+
+```bash
+python -m unittest discover -s tests -v
+node --check embedding-test/static/app.js
+```
+
+Testler model indirmeden ve canlı Qdrant verisine yazmadan; kaynak kimliğini, yarıda kalan PDF indirmelerinin temizlenmesini ve kaynak filtresinin iki arama koluna da uygulanmasını kontrol eder.
+
+**Mevcut koleksiyonlar için:** Kaynak bilgisini koruyan yeni UUID biçimi eski metin temelli ID'lerden farklıdır. Eski koleksiyona yeniden ingestion yapmak eski kayıtların yanında yeni kayıtlar oluşturabilir. Tam geçiş için yedek alınarak boş bir koleksiyona yeniden indeksleme yapılmalıdır; uygulama mevcut kayıtları otomatik silmez.

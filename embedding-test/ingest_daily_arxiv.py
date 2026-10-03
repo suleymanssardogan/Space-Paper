@@ -125,7 +125,8 @@ def run_daily_ingestion(category: str = "astro-ph.CO", max_results: int = 3):
                 chunk["paper_title"] = title
                 all_chunks.append(chunk)
                 
-            success_count += 1
+            if chunks_data:
+                success_count += 1
             
         except Exception as e:
             logger.error(f"{filename} işlenirken hata oluştu, atlanıyor: {e}")

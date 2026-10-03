@@ -114,6 +114,7 @@ class SpaceScienceVectorStore:
 
         except Exception as e:
             logger.error(f"Error creating collection: {e}")
+            raise
     
 
 
@@ -193,12 +194,14 @@ class SpaceScienceVectorStore:
                     Prefetch(
                         query=query_vector,
                         using="",
+                        filter=query_filter,
                         limit=limit * 4,
                         score_threshold=prefetch_dense_threshold
                     ),
                     Prefetch(
                         query=sparse_q,
                         using="sparse-text",
+                        filter=query_filter,
                         limit=limit * 4
                     )
                 ],

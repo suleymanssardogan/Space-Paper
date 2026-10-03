@@ -262,7 +262,7 @@ async function executeAskQuery(question, limit, scoreThreshold, source) {
             tile.innerHTML = `
                 <div class="citation-header">
                     <span>
-                        <i class="fa-solid fa-file-pdf" style="color: var(--accent-blue);"></i> ${cit.source}
+                        <i class="fa-solid fa-file-pdf" style="color: var(--accent-blue);"></i> ${escapeHtml(cit.source)}
                     </span>
                     <span class="score-label">Score: ${cit.score.toFixed(4)}</span>
                 </div>
@@ -316,7 +316,7 @@ async function executeSearchQuery(query, limit, scoreThreshold, source) {
     // Update Prefilter Badge in Search Mode
     const searchPrefilterBadge = document.getElementById('search-prefilter-badge');
     if (data.prefiltered_source) {
-        searchPrefilterBadge.innerHTML = `<i class="fa-solid fa-filter"></i> Filter: Active (${data.prefiltered_source})`;
+        searchPrefilterBadge.innerHTML = `<i class="fa-solid fa-filter"></i> Filter: Active (${escapeHtml(data.prefiltered_source)})`;
         searchPrefilterBadge.className = 'prefilter-badge active';
     } else {
         searchPrefilterBadge.innerHTML = `<i class="fa-solid fa-filter"></i> Filter: Passive`;
@@ -330,7 +330,7 @@ async function executeSearchQuery(query, limit, scoreThreshold, source) {
             item.innerHTML = `
                 <div class="search-result-header">
                     <span class="search-result-title">
-                        <i class="fa-solid fa-file-alt" style="color: var(--accent-blue);"></i> ${res.source} - Page ${res.page_number}
+                        <i class="fa-solid fa-file-alt" style="color: var(--accent-blue);"></i> ${escapeHtml(res.source)} - Page ${res.page_number}
                     </span>
                     <span class="search-result-score">Score: ${res.score.toFixed(4)}</span>
                 </div>
@@ -391,7 +391,7 @@ function formatAnswer(text) {
     // Parse references like (jwst_performance.pdf, Sayfa: 4) or (jwst_performance.pdf, Page: 4)
     const regex = /\(([^)]+\.pdf),\s*(Sayfa|Page):\s*(\d+)\)/gi;
     formatted = formatted.replace(regex, (match, file, lang, page) => {
-        return `<span class="badge citation-inline-pill" onclick="findAndOpenCitation('${file}', ${page})">[${file}, P. ${page}]</span>`;
+        return `<span class="badge citation-inline-pill" data-citation-file="${file}" data-citation-page="${page}">[${file}, P. ${page}]</span>`;
     });
     
     // Also parse markdown-like bold text
@@ -415,7 +415,7 @@ function findAndOpenCitation(filename, page) {
 // Open modal dialog for a citation item
 function openCitationModal(source, pageNumber, score, cacheIdx) {
     const modal = document.getElementById('citation-modal');
-    document.getElementById('modal-source-title').innerHTML = `<i class="fa-solid fa-file-pdf"></i> ${source} - Page ${pageNumber}`;
+    document.getElementById('modal-source-title').innerHTML = `<i class="fa-solid fa-file-pdf"></i> ${escapeHtml(source)} - Page ${pageNumber}`;
     
     const chunkTextEl = document.getElementById('modal-chunk-text');
     const scoreValEl = document.getElementById('modal-score');
@@ -424,7 +424,9 @@ function openCitationModal(source, pageNumber, score, cacheIdx) {
     let text = "Source document text not found.";
     let charCount = 0;
     
-    if (cacheIdx !== -1 && searchResultsData[cacheIdx]) {
+    if (cacheIdx !== -1 && searchResultsData[cacheIdx]
+        && searchResultsData[cacheIdx].source === source
+        && Number(searchResultsData[cacheIdx].page_number) === Number(pageNumber)) {
         text = searchResultsData[cacheIdx].text;
         charCount = text.length;
     } else {
@@ -454,7 +456,7 @@ function closeModal(event) {
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.innerText = text;
-    return div.innerHTML;
+    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 // Submit User Feedback (Thumbs Up / Down)
@@ -524,7 +526,7 @@ async function triggerArxivIngest() {
     } catch (err) {
         console.error("Arxiv Ingestion error:", err);
         ingestStatus.style.color = 'var(--status-error-text)';
-        ingestStatus.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> Error: ${err.message}`;
+        ingestStatus.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> Error: ${escapeHtml(err.message)}`;
     } finally {
         setTimeout(() => {
             ingestBtn.disabled = false;
@@ -534,3 +536,11 @@ async function triggerArxivIngest() {
     }
 }
 
+
+// Resolve citation clicks without interpolating source names into executable code.
+document.addEventListener('click', (event) => {
+    const citation = event.target.closest('[data-citation-file]');
+    if (citation) {
+        findAndOpenCitation(citation.dataset.citationFile, citation.dataset.citationPage);
+    }
+});

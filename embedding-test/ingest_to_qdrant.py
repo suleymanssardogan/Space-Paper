@@ -1,6 +1,7 @@
 import time
 import logging
 import uuid
+import json
 from dotenv import load_dotenv
 
 # .env dosyasını yükle
@@ -16,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 def bulk_upsert_chunks(store: SpaceScienceVectorStore, collection_name: str, chunks: list[dict], batch_size: int = 32):
     """Chunks listesini belirlenen batch_size boyutlarında gruplayarak Qdrant'a bulk upsert yapar."""
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
     total_chunks = len(chunks)
     logger.info(f"Toplam {total_chunks} adet chunk bulk upsert için hazırlanıyor. (Batch boyutu: {batch_size})")
     
@@ -33,8 +36,12 @@ def bulk_upsert_chunks(store: SpaceScienceVectorStore, collection_name: str, chu
         # 2. Qdrant PointStruct listesini oluştur
         points = []
         for idx, chunk in enumerate(batch):
-            # Idempotency sağlamak için metinden deterministik UUID üretiyoruz
-            point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk["text"]))
+            # Preserve provenance while keeping repeated ingestion idempotent.
+            identity = json.dumps(
+                [chunk["source"], chunk["page_number"], chunk["chunk_index"], chunk["text"]],
+                ensure_ascii=False, separators=(",", ":"),
+            )
+            point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, identity))
             sparse_emb = sparse_embeddings[idx]
             
             points.append(
@@ -58,7 +65,7 @@ def bulk_upsert_chunks(store: SpaceScienceVectorStore, collection_name: str, chu
             )
             
         # 3. Batch'i Qdrant'a yükle
-        store.client.upsert(collection_name=collection_name, points=points)
+        store.client.upsert(collection_name=collection_name, points=points, wait=True)
         
         batch_latency = time.time() - batch_start_time
         throughput = len(batch) / batch_latency

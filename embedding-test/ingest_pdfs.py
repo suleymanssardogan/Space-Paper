@@ -1,6 +1,7 @@
 # Arxiv den uzay bilimiyle ilgili gerçek araştırma kağıtlarını arama ve indirme
 import os
 import requests
+import tempfile
 import logging
 from pypdf import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -31,7 +32,10 @@ class DocumetPipeline:
 
         """
 
+        if os.path.basename(filename) != filename or filename in ("", ".", ".."):
+            raise ValueError("filename must be a plain file name")
         file_path= os.path.join(self.download_dir,filename)
+        temporary_path = None
         # Eğer dosya zaten varsa tekrar indirme (idempotency)
         if os.path.exists(file_path):
             logger.info(f"Dosya zaten mevcut, indirme atlanıyor: {file_path}")
@@ -39,14 +43,13 @@ class DocumetPipeline:
         try:
             logger.info(f"İndiriliyor:{url}->{file_path}")
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0"}
-            response = requests.get(url,headers=headers,stream=True,timeout=30)
-
-            response.raise_for_status()
-
-            #Chunk'lar halinde indirip dosyaya yazmak
-            with open(file_path,"wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
+            with requests.get(url, headers=headers, stream=True, timeout=30) as response:
+                response.raise_for_status()
+                with tempfile.NamedTemporaryFile(mode="wb", dir=self.download_dir, delete=False) as f:
+                    temporary_path = f.name
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+            os.replace(temporary_path, file_path)
             logger.info(f"Başarılı şekilde indirildi ve kaydedildi: {file_path}")
             return file_path
 
@@ -56,6 +59,10 @@ class DocumetPipeline:
         except IOError as e:
             logger.error(f"Dosya yazma hatası: {e}")
             raise
+
+        finally:
+            if temporary_path and os.path.exists(temporary_path):
+                os.unlink(temporary_path)
 
     def extract_text_from_pdf(self, file_path: str) -> list[dict]:
         """PDF dosyasından metin ve sayfa numaralarını çıkarır."""
