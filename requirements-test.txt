@@ -1,0 +1,7 @@
+# Offline tests mock model inference and external services.
+fastapi==0.136.1
+pydantic==2.12.5
+requests==2.31.0
+qdrant-client==1.18.0
+python-dotenv==1.0.1
+httpx==0.28.1

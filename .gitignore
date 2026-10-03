@@ -27,3 +27,6 @@ venv.bak/
 # IDE files
 .vscode/
 .idea/
+
+# Generated evaluation outputs may contain questions and answers.
+evaluation/results/

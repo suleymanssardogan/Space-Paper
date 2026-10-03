@@ -3,6 +3,10 @@
 // API sunucusunun adresi. Frontend ve Backend aynı sunucudaysa boş bırakın (relative path).
 // Eğer frontend'i Netlify/GitHub Pages, backend'i Render/Railway'e kuracaksanız Render adresinizi girin: 'https://sunucu-adresiniz.onrender.com'
 const API_BASE = '';
+function apiHeaders(admin = false) {
+    const field = document.getElementById(admin ? 'ingest-api-key' : 'api-access-key');
+    return { 'Content-Type': 'application/json', ...(field?.value ? { 'X-API-Key': field.value } : {}) };
+}
 
 let currentMode = 'ask'; // 'ask' or 'search'
 let healthTimer = null;
@@ -23,7 +27,7 @@ async function loadSources() {
     if (!sourceSelect) return;
     
     try {
-        const response = await fetch(`${API_BASE}/api/v1/sources`);
+        const response = await fetch(`${API_BASE}/api/v1/sources`, { headers: apiHeaders() });
         if (!response.ok) throw new Error("Status: " + response.status);
         const sources = await response.json();
         
@@ -195,7 +199,7 @@ function getScoreClass(score) {
 async function executeAskQuery(question, limit, scoreThreshold, source) {
     const response = await fetch(`${API_BASE}/api/v1/ask`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: apiHeaders(),
         body: JSON.stringify({ question, limit, score_threshold: scoreThreshold, source: source || null })
     });
     
@@ -292,7 +296,7 @@ async function executeAskQuery(question, limit, scoreThreshold, source) {
 async function executeSearchQuery(query, limit, scoreThreshold, source) {
     const response = await fetch(`${API_BASE}/api/v1/search`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: apiHeaders(),
         body: JSON.stringify({ query, limit, score_threshold: scoreThreshold, source: source || null })
     });
     
@@ -357,7 +361,7 @@ async function fetchTextSnippetsForCitations(query, limit, scoreThreshold, sourc
     try {
         const response = await fetch(`${API_BASE}/api/v1/search`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: apiHeaders(),
             body: JSON.stringify({ query, limit, score_threshold: scoreThreshold, source: source || null })
         });
         if (response.ok) {
@@ -474,7 +478,7 @@ async function submitFeedback(score) {
     try {
         const response = await fetch(`${API_BASE}/api/v1/feedback`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: apiHeaders(),
             body: JSON.stringify({ question, answer, score, feedback_text: "" })
         });
         
@@ -504,7 +508,7 @@ async function triggerArxivIngest() {
     try {
         const response = await fetch(`${API_BASE}/api/v1/ingest/daily`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: apiHeaders(true),
             body: JSON.stringify({ category: "astro-ph.CO+OR+cat:astro-ph.EP", max_results: 3 })
         });
 

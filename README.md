@@ -234,3 +234,56 @@ node --check embedding-test/static/app.js
 Testler model indirmeden ve canlı Qdrant verisine yazmadan; kaynak kimliğini, yarıda kalan PDF indirmelerinin temizlenmesini ve kaynak filtresinin iki arama koluna da uygulanmasını kontrol eder.
 
 **Mevcut koleksiyonlar için:** Kaynak bilgisini koruyan yeni UUID biçimi eski metin temelli ID'lerden farklıdır. Eski koleksiyona yeniden ingestion yapmak eski kayıtların yanında yeni kayıtlar oluşturabilir. Tam geçiş için yedek alınarak boş bir koleksiyona yeniden indeksleme yapılmalıdır; uygulama mevcut kayıtları otomatik silmez.
+
+### API koruması ve istek sınırı
+
+`.env` / deploy ortamında aşağıdaki ayarlar kullanılır:
+
+```env
+API_ACCESS_KEY=
+INGEST_API_KEY=
+API_RATE_LIMIT=20
+API_RATE_WINDOW_SECONDS=60
+EVIDENCE_MIN_COSINE=0.35
+```
+
+- `API_ACCESS_KEY` doluysa arama, soru-cevap, kaynak listesi ve geri bildirim istekleri `X-API-Key` başlığı gerektirir. Boş bırakılması herkese açık demo modudur; istek sınırı bu modda da çalışır.
+- Manuel ingestion ayrı `INGEST_API_KEY` gerektirir. Anahtar tanımlı değilse endpoint 503, yanlış veya eksik anahtarda 401 döner. GitHub Actions ingestion betiği bu HTTP korumasından bağımsız çalışır.
+- Arayüzde Advanced Search altında iki ayrı anahtar alanı bulunur. Anahtarlar tarayıcı depolamasına kaydedilmez; sayfa yenilendiğinde silinir. Sunucu anahtarları arayüz koduna gömülmez.
+- Varsayılan sınır istemci başına 60 saniyede 20 istektir; limit aşılırsa 429 ve `Retry-After` döner. Sağlık kontrolü ve OPTIONS istekleri muaf tutulur. İstek gövdesi en fazla 64 KiB olabilir.
+- Limiter süreç belleğinde tutulur ve yeniden başlatmada sıfırlanır. Birden fazla worker/replica için Redis gibi ortak bir limiter gerekir. Proxy arkasında yalnızca güvenilen proxylerin adreslerini Uvicorn'un `forwarded-allow-ips` ayarıyla tanımlayın; internetten gelen her forwarding başlığına güvenmeyin. Aynı NAT IP'sini paylaşan kullanıcılar aynı kotayı paylaşır.
+
+### Kanıt yetersizliğinde cevap vermeme
+
+Soru-cevap hattı, yeniden sıralamadan önce aday chunk'ların gerçek dense cosine benzerliğini hesaplar. Eşik `max(EVIDENCE_MIN_COSINE, kullanıcının score_threshold değeri)` olarak uygulanır; kullanıcı sunucudaki alt sınırı düşüremez. Kaynak adı/sayfa bilgisi eksik veya metni boş chunk'lar kanıt olarak kabul edilmez. Uygun chunk yoksa hiçbir LLM çağrısı yapılmaz.
+
+Üretilen cevabın en az bir `(dosya.pdf, Page: X)` atfı olmalı ve bulunan tüm atıflar gönderilen bağlamdaki dosya/sayfalarla eşleşmelidir. Geçersiz atıfta cevap yerine ret döner. Yanıt şeması `refused`, `refusal_reason` ve `answer_mode` (`generated`, `extractive`, `refusal`) alanlarını içerir. Çevrimdışı kaynak gösterimi üretilmiş cevap gibi değerlendirilmez.
+
+Cosine eşiği ve atıf doğrulaması anlamsal doğruluğu garanti etmez. Yüksek benzerlikteki bir parça yine de sorunun cevabını içermeyebilir; eşik değerlendirme sonuçlarına göre kalibre edilmelidir. Atıf kontrolü her iddianın doğruluğunu ayrıca doğrulamaz.
+
+### Karşılaştırmalı değerlendirme
+
+`evaluation/questions.json` 20 kaynak sorusu ve 10 ret sorusundan oluşan bir başlangıç setidir. İki temel PDF (`jwst_performance.pdf`, `kepler_mission.pdf`) indekslenmiş olmalıdır. Etiketler kaynak dosyası düzeyindedir; yayınlanmış, insan tarafından doğrulanmış bir benchmark değildir. CV'de sonuç kullanmadan önce soruların gerçekten kaynaklarda cevaplanabildiğini elle kontrol edin ve seti geliştirin.
+
+```bash
+# Çalışan yerel API üzerinden retrieval karşılaştırması; LLM çağrısı yapmaz
+python embedding-test/evaluate_rag.py --skip-rag
+
+# Retrieval karşılaştırmasına ek olarak ret / cevap üretme ölçümü; LLM kotası kullanır
+python embedding-test/evaluate_rag.py
+```
+
+Erişim anahtarı `.env` veya ortamdan okunur. Varsayılan 3.1 saniyelik istek aralığı demo kotasına uygundur. Önceden kullanılan kota varsa 429 görülebilir; araç bunları hata olarak raporlar. Kaynak dosyaları eksikse ölçüme başlamaz.
+
+`/api/v1/search` isteğinde `retrieval_mode` alanı `dense`, `hybrid` veya `hybrid_rerank` olabilir (varsayılan sonuncusu). Araç aynı soru setini üç yöntemle karşılaştırıp `evaluation/results/latest.json` raporuna ham sonuçları ve şu ölçümleri kaydeder:
+
+- **Source Hit@k:** beklenen dosyalardan en az birini ilk k chunk'ta bulan soruların oranı.
+- **Source Recall@k:** bulunan beklenen dosyaların tüm beklenen dosyalara oranı.
+- **Source MRR@k:** ilk doğru dosyanın chunk sırasının tersinin ortalaması.
+- **Gecikme:** başarılı istekler için ortalama ve p95; hatalar ayrıca sayılır.
+- **Refusal recall / false refusal rate:** cevaplanamaz soruları reddetme ve cevaplanabilir soruları yanlış reddetme oranı.
+- **Answerable response rate:** cevaplanabilir sorularda başarılı, üretilmiş cevap oranı; extractive fallback ayrı sayılır.
+
+Retrieval hataları başarı ölçümlerinin paydasında kalır. Ret ölçümlerinin yanında hata sayısını da değerlendirin. Bu ölçümler kaynak bulmayı ve ret davranışını ölçer; cevap doğruluğunu tek başına ölçmez. Üç yöntem aynı k ve retrieval eşiğiyle çalışır; RAG için sunucudaki kanıt alt sınırı ayrıca geçerlidir.
+
+CI her push/PR'da dış servis veya model indirmesi gerektirmeyen testleri ve sözdizimi kontrollerini çalıştırır. Yerel test bağımlılıkları: `pip install -r requirements-test.txt`.

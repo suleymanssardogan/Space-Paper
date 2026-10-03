@@ -160,15 +160,17 @@ class SpaceScienceVectorStore:
             logger.error(f"Upsert işlemi sırasında hata oluştu: {e}")
             raise e
     #Hybrid search
-    def search_documents(self, collection_name: str, query: str, limit: int = 3, score_threshold: float = None, source_filter: str = None):
+    def search_documents(self, collection_name: str, query: str, limit: int = 3, score_threshold: float = None, source_filter: str = None, retrieval_mode: str = "hybrid"):
         try:
             start_time=time.time()
             logger.info(f"Sorgu için hibrid arama yapılıyor: '{query}' (Kaynak Filtresi: {source_filter})")
 
             # 1. Sorgu cümlesini vektörleştirme
             query_vector = self.encode([query])[0]
-            sparse_vec = self.encode_sparse([query])[0]
-            sparse_q = SparseVector(indices=sparse_vec["indices"], values=sparse_vec["values"])
+            sparse_q = None
+            if retrieval_mode == "hybrid":
+                sparse_vec = self.encode_sparse([query])[0]
+                sparse_q = SparseVector(indices=sparse_vec["indices"], values=sparse_vec["values"])
 
             # 2. Ön-filtreleme (Pre-filtering) oluşturma
             query_filter = None
@@ -183,32 +185,42 @@ class SpaceScienceVectorStore:
                     ]
                 )
 
-            # 3. Qdrant üzerinde hibrid arama yapma (Prefetch ve RRF)
-            # Dense prefetch aşamasında çok katı bir eşik değeri uygulamak RRF (BM25) kelime eşleşmelerini engelleyebilir.
-            # Eşik değerini sadece son derecede yüksek (>0.50) durumlar hariç prefetch adımı için esnek tutuyoruz.
-            prefetch_dense_threshold = score_threshold if (score_threshold is not None and score_threshold > 0.50) else None
+            # RRF scores are ranks, so cosine thresholds are applied separately.
+            if retrieval_mode not in ("dense", "hybrid"):
+                raise ValueError("Unknown retrieval mode")
+            results = None
+            if retrieval_mode == "hybrid":
+                results = self.client.query_points(
+                    collection_name=collection_name,
+                    prefetch=[
+                        Prefetch(
+                            query=query_vector,
+                            using="",
+                            filter=query_filter,
+                            limit=limit * 4,
+                        ),
+                        Prefetch(
+                            query=sparse_q,
+                            using="sparse-text",
+                            filter=query_filter,
+                            limit=limit * 4
+                        )
+                    ],
+                    query=FusionQuery(fusion=Fusion.RRF),
+                    limit=limit,
+                    query_filter=query_filter
+                )
 
-            results = self.client.query_points(
-                collection_name=collection_name,
-                prefetch=[
-                    Prefetch(
-                        query=query_vector,
-                        using="",
-                        filter=query_filter,
-                        limit=limit * 4,
-                        score_threshold=prefetch_dense_threshold
-                    ),
-                    Prefetch(
-                        query=sparse_q,
-                        using="sparse-text",
-                        filter=query_filter,
-                        limit=limit * 4
-                    )
-                ],
-                query=FusionQuery(fusion=Fusion.RRF),
-                limit=limit,
-                query_filter=query_filter
-            )
+            if retrieval_mode == "dense":
+                results = self.client.query_points(
+                    collection_name=collection_name, query=query_vector, using="",
+                    limit=limit, query_filter=query_filter, score_threshold=score_threshold,
+                )
+            elif score_threshold is not None and results.points:
+                from evidence import cosine
+                vectors = self.encode([p.payload.get("text", "") for p in results.points])
+                results.points = [p for p, vector in zip(results.points, vectors)
+                                  if cosine(query_vector, vector) >= score_threshold]
 
             # 4.Latency Ölçme
             latency = time.time() - start_time

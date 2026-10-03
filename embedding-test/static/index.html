@@ -118,6 +118,15 @@
                         </div>
                     </div>
 
+                    <div class="filter-group">
+                        <label for="api-access-key">API access key (if required)</label>
+                        <input id="api-access-key" type="password" autocomplete="off" onchange="loadSources()" placeholder="Access key">
+                    </div>
+                    <div class="filter-group">
+                        <label for="ingest-api-key">Administrator key for paper sync</label>
+                        <input id="ingest-api-key" type="password" autocomplete="off" placeholder="Administrator key">
+                        <span class="range-info">Keys stay in this page and are cleared when you reload.</span>
+                    </div>
                     <div class="arxiv-action-row">
                         <span class="arxiv-text"><i class="fa-solid fa-cloud-arrow-down"></i> Sync latest astrophysics papers from arXiv</span>
                         <button id="ingest-btn" class="secondary-btn" onclick="triggerArxivIngest()">

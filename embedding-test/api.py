@@ -16,10 +16,13 @@ load_dotenv()
 import time
 import requests
 import logging
+from typing import Literal
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
+from api_protection import APIProtectionMiddleware
+from evidence import select_evidence, citations_supported, REFUSAL
 from save_to_qdrant import SpaceScienceVectorStore
 
 
@@ -40,17 +43,16 @@ from fastapi.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Gerekirse spesifik adresler eklenebilir
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+app.add_middleware(APIProtectionMiddleware)
+
 # Vektör veritabanı sınıfımızı ilklendir
 store = SpaceScienceVectorStore()
 COLLECTION_NAME = "space_science_collection"
-
-# Çevre değişkeninden Hugging Face Token'ını oku
-HF_TOKEN = os.getenv("HF_TOKEN", "")
 
 # Langfuse Observability entegrasyonu
 from langfuse import Langfuse
@@ -69,7 +71,9 @@ if os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY"):
 # --- 1. PYDANTIC ŞEMALARI (Data Validation) ---
 
 class SearchRequest(BaseModel):
-    query: str = Field(..., min_length=1, description="Aranacak semantik sorgu metni")
+    retrieval_mode: Literal["dense", "hybrid", "hybrid_rerank"] = "hybrid_rerank"
+    model_config = ConfigDict(str_strip_whitespace=True)
+    query: str = Field(..., min_length=1, max_length=2000, description="Aranacak semantik sorgu metni")
     limit: int = Field(default=3, ge=1, le=10, description="Dönecek maksimum sonuç sayısı")
     score_threshold: float | None = Field(default=None, ge=0.0, le=1.0, description="Benzerlik eşik değeri (Cosine similarity)")
     source: str | None = Field(default=None, description="Filtrelenecek kaynak dosya adı (PDF)")
@@ -89,7 +93,8 @@ class SearchResponse(BaseModel):
 # --- DAY 9: NEW SCHEMAS FOR RAG Q&A ---
 
 class AskRequest(BaseModel):
-    question: str = Field(..., min_length=1, description="Uzay bilimleriyle ilgili sorunuz")
+    model_config = ConfigDict(str_strip_whitespace=True)
+    question: str = Field(..., min_length=1, max_length=2000, description="Uzay bilimleriyle ilgili sorunuz")
     limit: int = Field(default=3, ge=1, le=10, description="Bağlam olarak kullanılacak kaynak sayısı")
     score_threshold: float = Field(default=0.20, ge=0.0, le=1.0, description="Min benzerlik eşiği")
     source: str | None = Field(default=None, description="Filtrelenecek kaynak dosya adı (PDF)")
@@ -100,6 +105,10 @@ class CitationItem(BaseModel):
     score: float = Field(..., description="Benzerlik skoru")
 
 class AskResponse(BaseModel):
+    refused: bool = False
+    refusal_reason: str | None = None
+    answer_mode: Literal["generated", "extractive", "refusal"] = "generated"
+    evidence_threshold: float | None = None
     question: str
     answer: str = Field(..., description="Yapay zeka tarafından üretilen güvenilir cevap")
     citations: list[CitationItem] = Field(..., description="Cevap için kullanılan kaynak referansları")
@@ -264,7 +273,7 @@ def health_check():
         
     # LLM sağlayıcı anahtarlarının kontrolü
     gemini_key = os.getenv("GEMINI_API_KEY", "")
-    openrouter_key = os.getenv("OPENROUTER_API_KEY", "") or os.getenv("HF_TOKEN", "")
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
     llm_configured = bool(gemini_key or openrouter_key)
     
     status_str = "healthy" if db_connected and coll_exists else "unhealthy"
@@ -323,13 +332,17 @@ def search_documents(request: SearchRequest):
         raw_results = store.search_documents(
             collection_name=COLLECTION_NAME,
             query=request.query,
+            retrieval_mode="dense" if request.retrieval_mode == "dense" else "hybrid",
             limit=candidate_limit,
             score_threshold=request.score_threshold,
             source_filter=request.source
         )
         
         # Rerank işlemi
-        raw_results = rerank_documents(request.query, raw_results, request.limit)
+        if request.retrieval_mode == "hybrid_rerank":
+            raw_results = rerank_documents(request.query, raw_results, request.limit)
+        else:
+            raw_results = raw_results[:request.limit]
         
         # Sonuçları Pydantic şemamıza uygun hale getir
         results = []
@@ -458,10 +471,17 @@ def ask_question(request: AskRequest):
             collection_name=COLLECTION_NAME,
             query=request.question,
             limit=candidate_limit,
-            score_threshold=request.score_threshold,
+            score_threshold=None,
             source_filter=request.source
         )
         
+        # Enforce a server-side cosine floor before any generation or reranking.
+        evidence_floor = float(os.getenv("EVIDENCE_MIN_COSINE", "0.35"))
+        if not 0 <= evidence_floor <= 1:
+            raise ValueError("EVIDENCE_MIN_COSINE must be between 0 and 1")
+        raw_results = select_evidence(store, request.question, raw_results,
+                                      max(evidence_floor, request.score_threshold))
+        evidence_threshold = max(evidence_floor, request.score_threshold)
         # 2. Adım: Cross-Encoder ile en alakalı makale parçalarını Rerank et
         raw_results = rerank_documents(request.question, raw_results, request.limit)
         
@@ -469,7 +489,9 @@ def ask_question(request: AskRequest):
         if not raw_results:
             return AskResponse(
                 question=request.question,
-                answer="Aranan bilgi indekslenmiş akademik belgelerde bulunamadı.",
+                answer=REFUSAL,
+                refused=True, refusal_reason="insufficient_evidence", answer_mode="refusal",
+                evidence_threshold=evidence_threshold,
                 citations=[],
                 latency_seconds=round(time.time() - start_time, 4),
                 prefiltered_source=request.source if request.source else None
@@ -509,7 +531,7 @@ def ask_question(request: AskRequest):
 
         # 4. Adım: LLM API Çağrısı (Hybrid Fallback: Gemini -> OpenRouter)
         gemini_key = os.getenv("GEMINI_API_KEY", "")
-        openrouter_key = os.getenv("OPENROUTER_API_KEY", "") or os.getenv("HF_TOKEN", "")
+        openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
         
         ai_answer = None
         
@@ -612,9 +634,11 @@ def ask_question(request: AskRequest):
                     except Exception as e:
                         logger.warning(f"OpenRouter ({model_to_use}) bağlantı hatası: {e}")
             else:
-                logger.error("OpenRouter API anahtarı bulunamadı (OPENROUTER_API_KEY veya HF_TOKEN eksik).")
+                logger.error("OpenRouter API anahtarı bulunamadı (OPENROUTER_API_KEY eksik).")
         
+        answer_mode = "generated"
         if not ai_answer:
+            answer_mode = "extractive"
             logger.info("API anahtarı bulunamadı veya LLM servisleri başarısız oldu, çevrimdışı mod cevabı oluşturuluyor...")
             ai_answer = (
                 "⚠️ **[Çevrimdışı Mod - Yapay Zeka Cevabı Sentezlenemedi]**\n\n"
@@ -635,10 +659,22 @@ def ask_question(request: AskRequest):
                 "`GEMINI_API_KEY=your_api_key` ekleyin ve sunucuyu yeniden başlatın.*"
             )
         
+        if "The retrieved index documents do not contain specific evidence regarding this question." in ai_answer:
+            return AskResponse(question=request.question, answer=REFUSAL, citations=[],
+                               refused=True, refusal_reason="insufficient_context", answer_mode="refusal",
+                               latency_seconds=round(time.time() - start_time, 4),
+                               evidence_threshold=evidence_threshold, prefiltered_source=request.source)
+
+        if answer_mode == "generated" and not citations_supported(ai_answer, raw_results):
+            return AskResponse(question=request.question, answer=REFUSAL, citations=[],
+                               refused=True, refusal_reason="unsupported_citations", answer_mode="refusal",
+                               latency_seconds=round(time.time() - start_time, 4),
+                               evidence_threshold=evidence_threshold, prefiltered_source=request.source)
+
         # Ragas benzeri değerlendirme yapalım
         eval_scores = {"faithfulness": None, "answer_relevance": None}
         # Sadece geçerli bir cevap alındıysa değerlendir
-        if ai_answer and "Aranan bilgi indekslenmiş akademik belgelerde bulunamadı" not in ai_answer and citations:
+        if answer_mode == "generated" and citations:
             eval_scores = evaluate_rag_response(
                 question=request.question,
                 context=context_str,
@@ -675,6 +711,8 @@ def ask_question(request: AskRequest):
         return AskResponse(
             question=request.question,
             answer=ai_answer,
+            answer_mode=answer_mode,
+            evidence_threshold=evidence_threshold,
             citations=citations,
             latency_seconds=round(latency, 4),
             faithfulness=eval_scores.get("faithfulness"),

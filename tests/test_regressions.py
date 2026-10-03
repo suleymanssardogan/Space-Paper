@@ -81,6 +81,29 @@ class IngestionTests(unittest.TestCase):
             self.assertEqual(prefetch.filter, query['query_filter'])
             self.assertEqual(prefetch.filter.must[0].match.value, 'a.pdf')
 
+    def test_real_qdrant_dense_and_hybrid_thresholds(self):
+        import sys
+        sys.path.insert(0, str(ROOT))
+        from qdrant_client import QdrantClient, models
+        store_class = load_definition('save_to_qdrant.py', 'SpaceScienceVectorStore', {
+            'logger': logging.getLogger(), 'time': __import__('time'),
+            **{name: getattr(models, name) for name in ['SparseVector', 'Prefetch', 'FusionQuery', 'Fusion']},
+        })
+        store = object.__new__(store_class)
+        store.client = QdrantClient(':memory:')
+        store.client.create_collection('test', vectors_config=models.VectorParams(size=2, distance=models.Distance.COSINE),
+                                       sparse_vectors_config={'sparse-text': models.SparseVectorParams()})
+        points = [models.PointStruct(id=i, vector={'': vector, 'sparse-text': models.SparseVector(indices=[1], values=[1.0])},
+                                    payload={'text': text, 'source': source})
+                  for i, vector, text, source in [(1, [1., 0.], 'relevant', 'a.pdf'), (2, [0., 1.], 'unrelated', 'a.pdf'), (3, [1., 0.], 'relevant', 'b.pdf')]]
+        store.client.upsert('test', points=points)
+        store.encode = lambda texts: [[0., 1.] if text == 'unrelated' else [1., 0.] for text in texts]
+        store.encode_sparse = Mock(return_value=[{'indices': [1], 'values': [1.0]}])
+        for mode in ('dense', 'hybrid'):
+            result = store.search_documents('test', 'question', limit=3, score_threshold=.35, source_filter='a.pdf', retrieval_mode=mode)
+            self.assertEqual([p.id for p in result], [1])
+        store.client.close()
+
 
 if __name__ == '__main__':
     unittest.main()

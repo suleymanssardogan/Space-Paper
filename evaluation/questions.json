@@ -1,0 +1,222 @@
+[
+  {
+    "id": "jwst-01",
+    "question": "What instruments does JWST carry?",
+    "expected_sources": [
+      "jwst_performance.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "jwst-02",
+    "question": "How is JWST optical performance assessed?",
+    "expected_sources": [
+      "jwst_performance.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "jwst-03",
+    "question": "What is JWST's wavelength coverage?",
+    "expected_sources": [
+      "jwst_performance.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "jwst-04",
+    "question": "How does JWST achieve its pointing stability?",
+    "expected_sources": [
+      "jwst_performance.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "jwst-05",
+    "question": "What are the NIRCam imaging capabilities?",
+    "expected_sources": [
+      "jwst_performance.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "jwst-06",
+    "question": "What does the MIRI instrument observe?",
+    "expected_sources": [
+      "jwst_performance.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "jwst-07",
+    "question": "What is the role of NIRSpec on JWST?",
+    "expected_sources": [
+      "jwst_performance.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "jwst-08",
+    "question": "What capabilities does NIRISS provide?",
+    "expected_sources": [
+      "jwst_performance.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "jwst-09",
+    "question": "How was JWST commissioned?",
+    "expected_sources": [
+      "jwst_performance.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "jwst-10",
+    "question": "What limits JWST's sensitivity?",
+    "expected_sources": [
+      "jwst_performance.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "kepler-01",
+    "question": "What are the scientific objectives of the Kepler mission?",
+    "expected_sources": [
+      "kepler_mission.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "kepler-02",
+    "question": "How does Kepler detect exoplanets?",
+    "expected_sources": [
+      "kepler_mission.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "kepler-03",
+    "question": "What is Kepler's field of view?",
+    "expected_sources": [
+      "kepler_mission.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "kepler-04",
+    "question": "How does Kepler measure stellar brightness?",
+    "expected_sources": [
+      "kepler_mission.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "kepler-05",
+    "question": "What is Kepler's observing cadence?",
+    "expected_sources": [
+      "kepler_mission.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "kepler-06",
+    "question": "What is the Kepler Follow-up Observation Program?",
+    "expected_sources": [
+      "kepler_mission.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "kepler-07",
+    "question": "How are Kepler planet candidates confirmed?",
+    "expected_sources": [
+      "kepler_mission.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "kepler-08",
+    "question": "What stars does Kepler observe?",
+    "expected_sources": [
+      "kepler_mission.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "kepler-09",
+    "question": "What photometric precision does Kepler require?",
+    "expected_sources": [
+      "kepler_mission.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "kepler-10",
+    "question": "How does Kepler search for Earth-size planets?",
+    "expected_sources": [
+      "kepler_mission.pdf"
+    ],
+    "should_refuse": false
+  },
+  {
+    "id": "refusal-01",
+    "question": "How do I bake a pizza?",
+    "expected_sources": [],
+    "should_refuse": true
+  },
+  {
+    "id": "refusal-02",
+    "question": "Write a recipe for chocolate cake.",
+    "expected_sources": [],
+    "should_refuse": true
+  },
+  {
+    "id": "refusal-03",
+    "question": "Who won the 2026 football World Cup?",
+    "expected_sources": [],
+    "should_refuse": true
+  },
+  {
+    "id": "refusal-04",
+    "question": "What is today's Bitcoin price?",
+    "expected_sources": [],
+    "should_refuse": true
+  },
+  {
+    "id": "refusal-05",
+    "question": "How do I repair a washing machine?",
+    "expected_sources": [],
+    "should_refuse": true
+  },
+  {
+    "id": "refusal-06",
+    "question": "What exact date will JWST stop functioning?",
+    "expected_sources": [],
+    "should_refuse": true
+  },
+  {
+    "id": "refusal-07",
+    "question": "How many Earth-like planets will Kepler discover in 2035?",
+    "expected_sources": [],
+    "should_refuse": true
+  },
+  {
+    "id": "refusal-08",
+    "question": "What is the name of the first person to walk on an exoplanet?",
+    "expected_sources": [],
+    "should_refuse": true
+  },
+  {
+    "id": "refusal-09",
+    "question": "What is the confirmed population of intelligent aliens in Kepler's field?",
+    "expected_sources": [],
+    "should_refuse": true
+  },
+  {
+    "id": "refusal-10",
+    "question": "What were JWST's measured observations of the invented planet Codexia-999?",
+    "expected_sources": [],
+    "should_refuse": true
+  }
+]
